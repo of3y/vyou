@@ -1,0 +1,4 @@
+image_url,phenomenon_gold,features_gold,source,license,notes
+# Day 2 populates rows. Columns are binding; formatting is CSV with a leading-comment `#` row convention
+# for human annotations. Primary source lane is one or more Hugging Face image datasets; supplementary
+# lane is hand-labeled Flickr CC-BY + ESWD public reports + Daniel's personal archive.
