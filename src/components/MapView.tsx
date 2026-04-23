@@ -50,6 +50,7 @@ export default function MapView({ center = MUNICH, zoom = 9, className }: Props)
 
     const map = new maplibregl.Map({
       container: containerRef.current,
+      attributionControl: false,
       style: {
         version: 8,
         sources: {
@@ -82,6 +83,7 @@ export default function MapView({ center = MUNICH, zoom = 9, className }: Props)
       new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: true }),
       "top-right",
     );
+    map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-left");
 
     map.on("load", async () => {
       map.addSource("report-cones", {

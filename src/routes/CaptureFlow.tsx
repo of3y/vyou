@@ -19,16 +19,27 @@ export default function CaptureFlow() {
   const [capture, setCapture] = useState<Capture | null>(null);
   const [heading, setHeading] = useState<number>(0);
   const [liveHeading, setLiveHeading] = useState<number | null>(null);
+  const [compassAccuracy, setCompassAccuracy] = useState<number | null>(null);
   const [caption, setCaption] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (step !== "heading") return;
+    if (step !== "camera" && step !== "heading") return;
     const handler = (e: DeviceOrientationEvent) => {
-      const ios = (e as DeviceOrientationEvent & { webkitCompassHeading?: number }).webkitCompassHeading;
-      const value = typeof ios === "number" ? ios : typeof e.alpha === "number" ? 360 - e.alpha : null;
+      const ios = e as DeviceOrientationEvent & {
+        webkitCompassHeading?: number;
+        webkitCompassAccuracy?: number;
+      };
+      const value = typeof ios.webkitCompassHeading === "number"
+        ? ios.webkitCompassHeading
+        : typeof e.alpha === "number"
+        ? 360 - e.alpha
+        : null;
       if (value !== null && !Number.isNaN(value)) setLiveHeading(value);
+      if (typeof ios.webkitCompassAccuracy === "number" && ios.webkitCompassAccuracy >= 0) {
+        setCompassAccuracy(ios.webkitCompassAccuracy);
+      }
     };
     window.addEventListener("deviceorientation", handler, true);
     return () => window.removeEventListener("deviceorientation", handler, true);
@@ -92,9 +103,16 @@ export default function CaptureFlow() {
         {step === "permissions" && <PermissionsStep onGrant={requestPermissions} />}
         {step === "camera" && (
           <CameraStep
+            liveHeading={liveHeading}
+            compassAccuracyDeg={compassAccuracy}
             onCaptured={(c) => {
               setCapture(c);
-              setStep("heading");
+              if (liveHeading !== null) {
+                setHeading(liveHeading);
+                setStep("submit");
+              } else {
+                setStep("heading");
+              }
             }}
           />
         )}
@@ -104,6 +122,8 @@ export default function CaptureFlow() {
             heading={heading}
             onHeading={setHeading}
             photoUrl={capture.blobUrl}
+            gpsAccuracyM={capture.accuracyM}
+            compassAccuracyDeg={compassAccuracy}
             onConfirm={() => setStep("submit")}
           />
         )}
@@ -140,18 +160,29 @@ function PermissionsStep({ onGrant }: { onGrant: () => void }) {
   );
 }
 
-function CameraStep({ onCaptured }: { onCaptured: (c: Capture) => void }) {
+function CameraStep({
+  onCaptured,
+  liveHeading,
+  compassAccuracyDeg,
+}: {
+  onCaptured: (c: Capture) => void;
+  liveHeading: number | null;
+  compassAccuracyDeg: number | null;
+}) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
+  const [facing, setFacing] = useState<"environment" | "user">("environment");
 
   useEffect(() => {
     let cancelled = false;
+    setReady(false);
+    streamRef.current?.getTracks().forEach((t) => t.stop());
     (async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: "environment" } },
+          video: { facingMode: { ideal: facing } },
           audio: false,
         });
         if (cancelled) {
@@ -172,7 +203,7 @@ function CameraStep({ onCaptured }: { onCaptured: (c: Capture) => void }) {
       cancelled = true;
       streamRef.current?.getTracks().forEach((t) => t.stop());
     };
-  }, []);
+  }, [facing]);
 
   async function shoot() {
     if (!videoRef.current || !ready) return;
@@ -192,12 +223,7 @@ function CameraStep({ onCaptured }: { onCaptured: (c: Capture) => void }) {
     const capturedAt = new Date().toISOString();
 
     try {
-      const position = await new Promise<GeolocationPosition>((resolve, reject) =>
-        navigator.geolocation.getCurrentPosition(resolve, reject, {
-          enableHighAccuracy: true,
-          timeout: 10000,
-        }),
-      );
+      const position = await getPositionWithFallback();
       onCaptured({
         blobUrl,
         capturedAt,
@@ -206,8 +232,7 @@ function CameraStep({ onCaptured }: { onCaptured: (c: Capture) => void }) {
         accuracyM: position.coords.accuracy ?? null,
       });
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Location unavailable";
-      toast.error(`Location failed: ${message}`);
+      toast.error(explainGeoError(err));
     }
   }
 
@@ -220,9 +245,33 @@ function CameraStep({ onCaptured }: { onCaptured: (c: Capture) => void }) {
     );
   }
 
+  const compassT = compassTier(compassAccuracyDeg);
+
   return (
     <div className="relative h-full w-full bg-black">
       <video ref={videoRef} className="h-full w-full object-cover" playsInline muted />
+      <div
+        className={`pointer-events-none absolute left-1/2 top-4 flex -translate-x-1/2 items-center gap-2 rounded-full px-4 py-1.5 text-xs backdrop-blur ${trustPillClasses(compassT)}`}
+      >
+        <span className="opacity-60">Heading</span>
+        <span className="tabular-nums text-base font-semibold">
+          {liveHeading !== null ? `${Math.round(liveHeading)}°` : "—"}
+        </span>
+        <TrustDot tier={compassT} />
+        <span className="tabular-nums opacity-70">{compassLabel(compassAccuracyDeg)}</span>
+      </div>
+      <button
+        onClick={() => setFacing((f) => (f === "environment" ? "user" : "environment"))}
+        className="absolute bottom-10 right-6 flex h-11 w-11 items-center justify-center rounded-full bg-black/60 text-white/90 backdrop-blur active:scale-90"
+        aria-label="Flip camera"
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+          <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+          <path d="M21 3v5h-5" />
+          <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
+          <path d="M3 21v-5h5" />
+        </svg>
+      </button>
       <button
         onClick={shoot}
         disabled={!ready}
@@ -238,12 +287,16 @@ function HeadingStep({
   heading,
   onHeading,
   photoUrl,
+  gpsAccuracyM,
+  compassAccuracyDeg,
   onConfirm,
 }: {
   liveHeading: number | null;
   heading: number;
   onHeading: (h: number) => void;
   photoUrl: string;
+  gpsAccuracyM: number | null;
+  compassAccuracyDeg: number | null;
   onConfirm: () => void;
 }) {
   const hasMagnetometer = liveHeading !== null;
@@ -262,6 +315,7 @@ function HeadingStep({
               ? `Device compass: ${Math.round(liveHeading)}° — tap "Use compass" to snap`
               : "No compass detected — adjust the slider to point at the sky you photographed"}
           </p>
+          <TrustChips gpsAccuracyM={gpsAccuracyM} compassAccuracyDeg={compassAccuracyDeg} />
         </div>
 
         <div className="flex flex-col gap-3">
@@ -319,31 +373,136 @@ function SubmitStep({
   submitting: boolean;
 }) {
   return (
-    <div className="flex h-full flex-col gap-6 p-6">
-      <div className="flex gap-4">
-        <img src={photoUrl} alt="Captured sky" className="h-24 w-24 rounded-lg object-cover" />
-        <div className="flex flex-col justify-center text-sm">
-          <p className="text-white/60">Heading</p>
-          <p className="text-xl font-semibold">{Math.round(heading)}°</p>
+    <div className="flex h-full flex-col">
+      <div className="relative flex-1 overflow-hidden bg-black">
+        <img src={photoUrl} alt="Captured sky" className="h-full w-full object-cover" />
+        <div className="absolute bottom-4 left-4 flex items-center gap-2 rounded-full bg-black/70 px-3 py-1.5 text-sm text-white/90 backdrop-blur">
+          <span className="text-white/50">Heading</span>
+          <span className="tabular-nums font-semibold">{Math.round(heading)}°</span>
         </div>
       </div>
-      <label className="flex flex-col gap-2 text-sm">
-        <span className="text-white/60">Caption (optional, ≤ 280 chars)</span>
+      <div className="flex flex-col gap-3 border-t border-white/10 p-4">
         <textarea
           value={caption}
           onChange={(e) => onCaption(e.target.value.slice(0, 280))}
-          rows={3}
+          rows={2}
           className="rounded-lg border border-white/10 bg-white/5 p-3 text-sm"
-          placeholder="What do you see?"
+          placeholder="Caption (optional)"
         />
-      </label>
-      <button
-        onClick={onSubmit}
-        disabled={submitting}
-        className="mt-auto rounded-full bg-emerald-500 px-8 py-3 text-sm font-semibold text-black active:scale-95 disabled:opacity-50"
-      >
-        {submitting ? "Submitting…" : "Submit report"}
-      </button>
+        <button
+          onClick={onSubmit}
+          disabled={submitting}
+          className="rounded-full bg-emerald-500 px-8 py-3 text-sm font-semibold text-black active:scale-95 disabled:opacity-50"
+        >
+          {submitting ? "Submitting…" : "Submit report"}
+        </button>
+      </div>
     </div>
   );
+}
+
+function TrustChips({
+  gpsAccuracyM,
+  compassAccuracyDeg,
+}: {
+  gpsAccuracyM: number | null;
+  compassAccuracyDeg: number | null;
+}) {
+  const gps = gpsTier(gpsAccuracyM);
+  const compass = compassTier(compassAccuracyDeg);
+  return (
+    <div className="flex justify-center gap-2 pt-2">
+      <Chip label="GPS" value={gpsLabel(gpsAccuracyM)} tier={gps} />
+      <Chip label="Compass" value={compassLabel(compassAccuracyDeg)} tier={compass} />
+    </div>
+  );
+}
+
+type Tier = "high" | "medium" | "low" | "unknown";
+
+function trustPillClasses(tier: Tier): string {
+  switch (tier) {
+    case "high":
+      return "border-2 border-emerald-400 bg-emerald-500/20 text-emerald-50 shadow-[0_0_0_1px_rgba(16,185,129,0.35)]";
+    case "medium":
+      return "border border-amber-400/70 bg-amber-500/20 text-amber-50";
+    case "low":
+      return "border border-red-400/70 bg-red-500/20 text-red-50";
+    case "unknown":
+    default:
+      return "border border-white/10 bg-black/60 text-white/90";
+  }
+}
+
+function TrustDot({ tier }: { tier: Tier }) {
+  const color: Record<Tier, string> = {
+    high: "bg-emerald-400",
+    medium: "bg-amber-400",
+    low: "bg-red-400",
+    unknown: "bg-white/30",
+  };
+  return <span className={`inline-block h-2 w-2 rounded-full ${color[tier]}`} aria-hidden />;
+}
+
+function Chip({ label, value, tier }: { label: string; value: string; tier: Tier }) {
+  const tone: Record<Tier, string> = {
+    high: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+    medium: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+    low: "bg-red-500/15 text-red-300 border-red-500/30",
+    unknown: "bg-white/5 text-white/50 border-white/10",
+  };
+  return (
+    <span className={`rounded-full border px-3 py-1 text-xs ${tone[tier]}`}>
+      <span className="text-white/50">{label}</span> <span className="tabular-nums">{value}</span>
+    </span>
+  );
+}
+
+function gpsTier(acc: number | null): Tier {
+  if (acc == null) return "unknown";
+  if (acc <= 25) return "high";
+  if (acc <= 100) return "medium";
+  return "low";
+}
+
+function gpsLabel(acc: number | null): string {
+  if (acc == null) return "—";
+  return `±${Math.round(acc)} m`;
+}
+
+function compassTier(acc: number | null): Tier {
+  if (acc == null) return "unknown";
+  if (acc <= 10) return "high";
+  if (acc <= 25) return "medium";
+  return "low";
+}
+
+function compassLabel(acc: number | null): string {
+  if (acc == null) return "n/a";
+  return `±${Math.round(acc)}°`;
+}
+
+async function getPositionWithFallback(): Promise<GeolocationPosition> {
+  const tryOnce = (options: PositionOptions) =>
+    new Promise<GeolocationPosition>((resolve, reject) =>
+      navigator.geolocation.getCurrentPosition(resolve, reject, options),
+    );
+
+  try {
+    return await tryOnce({ enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 });
+  } catch (highErr) {
+    console.warn("[VYou] high-accuracy geolocation failed, retrying with low accuracy", highErr);
+    return await tryOnce({ enableHighAccuracy: false, timeout: 20000, maximumAge: 300000 });
+  }
+}
+
+function explainGeoError(err: unknown): string {
+  if (err && typeof err === "object" && "code" in err && "message" in err) {
+    const e = err as GeolocationPositionError;
+    if (e.code === e.PERMISSION_DENIED) return "Location permission denied. Tap 'aA' → Website Settings → Location: Allow, then reload.";
+    if (e.code === e.POSITION_UNAVAILABLE) return "Location unavailable — GPS/WiFi could not fix position. Try near a window or outdoors.";
+    if (e.code === e.TIMEOUT) return "Location timed out. Move to a window or try again outdoors.";
+    return `Location error (code ${e.code}): ${e.message}`;
+  }
+  return err instanceof Error ? err.message : "Unknown location error";
 }
