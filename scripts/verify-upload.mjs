@@ -5,7 +5,10 @@ const env = Object.fromEntries(
   readFileSync(".env.local", "utf8")
     .split("\n")
     .filter((l) => l.includes("="))
-    .map((l) => l.split("=", 2)),
+    .map((l) => {
+      const i = l.indexOf("=");
+      return [l.slice(0, i), l.slice(i + 1)];
+    }),
 );
 
 const client = createClient(env.VITE_SUPABASE_URL, env.VITE_SUPABASE_ANON_KEY);
