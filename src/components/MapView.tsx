@@ -1,13 +1,45 @@
 import { useEffect, useRef } from "react";
 import maplibregl from "maplibre-gl";
+import type { FeatureCollection, Polygon } from "geojson";
+import { supabase } from "../lib/supabase";
+import { coneFeature } from "../lib/cone";
 
-const MUNICH: [number, number] = [11.5820, 48.1351];
+const MUNICH: [number, number] = [11.582, 48.1351];
 
 type Props = {
   center?: [number, number];
   zoom?: number;
   className?: string;
 };
+
+type ReportRow = {
+  id: string;
+  lon: number;
+  lat: number;
+  heading_degrees: number;
+  status: string;
+};
+
+async function fetchConeFeatures(): Promise<FeatureCollection<Polygon>> {
+  const { data, error } = await supabase
+    .from("reports_v")
+    .select("id, lon, lat, heading_degrees, status")
+    .in("status", ["accepted", "pending"])
+    .order("submitted_at", { ascending: false })
+    .limit(200);
+
+  if (error) {
+    console.error("[VYou] fetch reports failed", error);
+    return { type: "FeatureCollection", features: [] };
+  }
+
+  const features = (data as ReportRow[]).map((r) =>
+    coneFeature(r.lon, r.lat, r.heading_degrees, {
+      properties: { id: r.id, status: r.status },
+    }),
+  );
+  return { type: "FeatureCollection", features };
+}
 
 export default function MapView({ center = MUNICH, zoom = 9, className }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -46,7 +78,42 @@ export default function MapView({ center = MUNICH, zoom = 9, className }: Props)
     });
 
     map.addControl(new maplibregl.NavigationControl({ showCompass: true }), "top-right");
-    map.addControl(new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: true }), "top-right");
+    map.addControl(
+      new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: true }),
+      "top-right",
+    );
+
+    map.on("load", async () => {
+      map.addSource("report-cones", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+
+      map.addLayer({
+        id: "report-cones-fill",
+        type: "fill",
+        source: "report-cones",
+        paint: {
+          "fill-color": "#10b981",
+          "fill-opacity": 0.25,
+        },
+      });
+
+      map.addLayer({
+        id: "report-cones-outline",
+        type: "line",
+        source: "report-cones",
+        paint: {
+          "line-color": "#10b981",
+          "line-width": 1.5,
+          "line-opacity": 0.8,
+        },
+      });
+
+      const features = await fetchConeFeatures();
+      const source = map.getSource("report-cones") as maplibregl.GeoJSONSource | undefined;
+      source?.setData(features);
+    });
 
     mapRef.current = map;
 
