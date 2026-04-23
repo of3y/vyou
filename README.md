@@ -2,7 +2,7 @@
 
 *See the weather through someone else's view.*
 
-VYou is a photo-first community weather app. A field observer takes a photo of what they see — a storm, a cloud structure, hail on a car, clear sky — and VYou captures not just the image but the compass heading, so every report becomes a **view-cone** on a shared map pointing exactly where the camera was aimed. The basemap renders EUMETSAT satellite imagery over DWD radar for Central Europe; behind the submit button, a team of Claude Managed Agents on Opus 4.7 classifies the phenomenon, pulls the radar reading for that view at that timestamp, judges whether the photo is consistent with the remote-sensing layers, moderates the submission, and writes a human-readable narrative. A Deep Researcher agent answers personalized briefings on demand.
+VYou is a community-fed situational weather map. A field observer takes a photo of what they see — a storm, a cloud structure, hail on a car, a clean front edge — and VYou captures not just the image but the compass heading, so every report becomes a **view-cone** on a shared map pointing exactly where the camera was aimed. Behind the submit button, Claude Managed Agents on Opus 4.7 classify the phenomenon, read the DWD radar context for that view at that timestamp, and return a verified report — what the photo shows, whether it is consistent with the official weather layers, and where the uncertainty sits. The product lives in one motion: a sky photo becomes a directional, AI-verified weather report on a shared map.
 
 The name is pronounced *"view."* The **V** doubles as the heading-cone geometry; the **YOU** puts the observer at the centre. One name, two readings.
 
@@ -16,13 +16,13 @@ VYou was designed **backwards from the seven patterns that repeated across the f
 
 The domain wedge is genuine: the builder works professionally on systems adjacent to Europe's weather satellites. That perspective shapes the satellite layer of the product — band choices, data-access posture, the meteorology taxonomy cited by the agents. (Employer name stays out of the public materials for the hackathon week per the builder's personal-capacity framing; this can be revisited post-hackathon if the project continues.)
 
-## How we built this — a companion posture
+## How we built this — on the record
 
-Every line in this repo was written after the 2026-04-21 12:30 EST hackathon kickoff by Daniel (in Munich) collaborating with a named Claude Code session called **VYou** — the same name as the product, on purpose. Pronunciation *view* holds for both readings. Authorship on docs is explicit: `author: VYou` on notes drafted by the Claude Code session, `author: Daniel` on notes Daniel writes directly, and a `>[!note Daniel]` callout pattern for Daniel's inline review of VYou-authored notes.
+Every line in this repo was written after the 2026-04-21 12:30 EST hackathon kickoff by Daniel (in Munich) working with Claude Code. The whole collaboration lives on the record inside the repo's [`docs/`](docs/) vault — Obsidian-compatible, session-to-session handoffs via daily notes, durable decisions in a dated [`decision-log.md`](docs/decision-log.md). The public reference for this mode of work is Andrej Karpathy's recent showcasing of Obsidian + Claude Code as a coherent writing-and-building environment.
 
-The public reference for this mode of work is Andrej Karpathy's recent showcasing of Obsidian + Claude Code as a coherent writing-and-building environment. VYou extends that posture by giving the companion a name that matches the product and running the whole collaboration on the record inside the repo's [`docs/`](docs/) vault — Obsidian-compatible, session-to-session handoffs via daily notes, durable decisions in a dated [`decision-log.md`](docs/decision-log.md). The wager: a named, journaling, on-the-record Claude companion is a natural next move for the Claude Code product line, and building it in public here is the small proof.
+Authorship on docs is explicit: `author: Claude` on notes drafted by the Claude Code session, `author: Daniel` on notes Daniel writes directly, and a `>[!note Daniel]` callout pattern for Daniel's inline review of Claude-authored notes.
 
-See [`docs/companion.md`](docs/companion.md) for the posture, and [`docs/Welcome.md`](docs/Welcome.md) for the vault map.
+See [`docs/companion.md`](docs/companion.md) for the working posture, and [`docs/Welcome.md`](docs/Welcome.md) for the vault map.
 
 ---
 
@@ -30,7 +30,7 @@ See [`docs/companion.md`](docs/companion.md) for the posture, and [`docs/Welcome
 
 | Dimension | Where it lives in the repo |
 |---|---|
-| **Opus 4.7 Use (25%)** — vision + Managed Agents | [`agents/`](agents/) (7 live agents + 1 offline validator), [`skills/`](skills/) (3 shipped skills), `docs/architecture.md` |
+| **Opus 4.7 Use (25%)** — vision + Managed Agents | [`agents/`](agents/) (Classifier + Reconciliation as Managed Agents; Radar, Verification, Image Moderator, TOS Moderator as Messages-API calls with cached skill prefixes; 1 offline validator), [`skills/`](skills/) (3 shipped skills), `docs/architecture.md` |
 | **Depth (20%)** — defended claims | [`eval/`](eval/) (supervised classifier benchmark, committed reports), [`skills/severe-weather-reporting/`](skills/severe-weather-reporting/) |
 | **Demo (25%)** — 3-min video | [`demo/`](demo/) (Remotion project), [`docs/demo-script.md`](docs/demo-script.md) |
 | **Impact (30%)** — real community-weather JTBD | [`docs/distribution-plan.md`](docs/distribution-plan.md) (closed iOS PWA beta, 5–15 friends contributing real reports during the build week) |
@@ -43,4 +43,4 @@ See [`docs/companion.md`](docs/companion.md) for the posture, and [`docs/Welcome
 
 ## Status
 
-Day 1 scaffold. Details land in [`docs/`](docs/) as the build progresses. Open for inspection by judges and teammates at submission time.
+Day 2. Scope consolidated 2026-04-23 to one hero loop — photo → heading → cone → verified report on a shared map. Details land in [`docs/`](docs/) as the build progresses. Open for inspection by judges and teammates at submission time.
