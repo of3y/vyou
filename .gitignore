@@ -10,6 +10,10 @@ dist/
 .env.local
 .env.*.local
 
+# Supabase CLI local state
+supabase/.temp/
+supabase/.branches/
+
 # Obsidian personal pane/cursor state — constantly churns, not shared
 docs/.obsidian/workspace.json
 docs/.obsidian/workspace-mobile.json
