@@ -51,6 +51,16 @@ export default function ReportDetail() {
         <MapView center={[report.lon, report.lat]} zoom={12} />
       </div>
       <main className="flex-1 space-y-4 overflow-y-auto p-6 text-sm">
+        {report.photo_url && (
+          <section>
+            <img
+              src={report.photo_url}
+              alt="Submitted sky photo"
+              className="w-full rounded-lg border border-white/10"
+              loading="lazy"
+            />
+          </section>
+        )}
         <section>
           <p className="text-white/50">Heading</p>
           <p className="text-xl font-semibold tabular-nums">{Math.round(report.heading_degrees)}°</p>

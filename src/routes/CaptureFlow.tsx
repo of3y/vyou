@@ -7,6 +7,7 @@ import { getReporterId } from "../lib/reporter";
 type Step = "permissions" | "camera" | "heading" | "submit";
 
 type Capture = {
+  blob: Blob;
   blobUrl: string;
   capturedAt: string;
   lon: number;
@@ -65,11 +66,25 @@ export default function CaptureFlow() {
     if (!capture) return;
     setSubmitting(true);
     try {
+      const reporterId = getReporterId();
+      const storagePath = `${reporterId}/${capture.capturedAt}-${crypto.randomUUID()}.jpg`;
+
+      const upload = await supabase.storage
+        .from("photos")
+        .upload(storagePath, capture.blob, {
+          contentType: "image/jpeg",
+          cacheControl: "31536000",
+          upsert: false,
+        });
+      if (upload.error) throw upload.error;
+
+      const { data: publicUrl } = supabase.storage.from("photos").getPublicUrl(storagePath);
+
       const { data, error } = await supabase
         .from("reports")
         .insert({
-          reporter_id: getReporterId(),
-          photo_url: null,
+          reporter_id: reporterId,
+          photo_url: publicUrl.publicUrl,
           location: `POINT(${capture.lon} ${capture.lat})`,
           heading_degrees: heading,
           heading_accuracy_m: capture.accuracyM,
@@ -225,6 +240,7 @@ function CameraStep({
     try {
       const position = await getPositionWithFallback();
       onCaptured({
+        blob,
         blobUrl,
         capturedAt,
         lon: position.coords.longitude,
