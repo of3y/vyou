@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect } from "react";
 import { Route, Routes } from "react-router-dom";
 
-import IOSInstallHint from "./components/IOSInstallHint";
+import InstallHint from "./components/InstallHint";
 import InviteBanner from "./components/InviteBanner";
 import { captureInviteFromUrl } from "./lib/invite";
 
@@ -36,7 +36,7 @@ export default function App() {
         </Routes>
       </Suspense>
       <InviteBanner />
-      <IOSInstallHint />
+      <InstallHint />
     </>
   );
 }
