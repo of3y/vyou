@@ -4,6 +4,8 @@ VYou scores 14 phenomenon labels, grouped into four families by decision-relevan
 
 Plus one escape hatch: `out_of_scope` for images that are not sky or outdoor weather scenes. See `rubrics.md` for the out-of-scope shape.
 
+Plus one demo-only label: `tester_selfie` for closed-beta submissions that are clearly a tester smiling into the camera rather than a weather observation. See `rubrics.md` §Tester-selfie (demo-only). **Removed post-hackathon.**
+
 ## Cloud morphology
 
 Base-rate sky states. Useful as negative controls and as context the downstream reconciliation agent uses to judge whether reported severe weather is plausible.
@@ -48,3 +50,4 @@ storm structures         : wall_cloud, shelf_cloud, mammatus, funnel_cloud, torn
 ```
 
 Plus `out_of_scope` — see `rubrics.md`.
+Plus demo-only `tester_selfie` — see `rubrics.md` §Tester-selfie. Remove post-hackathon.

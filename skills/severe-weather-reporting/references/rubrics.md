@@ -68,3 +68,30 @@ Rules:
 - **Ambiguous edge cases** — a window frame with sky visible outside, a dashboard-camera frame with some sky visible above road surface — record the weather phenomenon with `confidence: "low"` and a `obstructed-foreground` feature. `out_of_scope` is for images where no weather judgment is possible at all, not for weak-weather images.
 
 The out-of-scope record is a first-class output, not an error. It lets the ingestion pipeline moderate non-weather submissions out of the map while preserving a recorded decision the user can audit.
+
+## Tester-selfie (demo-only)
+
+**Scope:** hackathon closed-beta + demo footage only. Remove this section and the `tester_selfie` label from the taxonomy post-hackathon.
+
+During the closed-beta cohort's stress-testing of the PWA, friends will submit selfies — happy faces smiling into the camera — both as natural exploration of the capture flow and as demo-grade footage worth including in the three-minute video. Treating those as `out_of_scope` (which the default rubric would do — selfies are not weather scenes) costs us usable demo material and risks reading as the app "rejecting" the testers' first submissions on camera.
+
+Emit the tester-selfie record when the frame is dominated by a person's face or a group of people visibly posing for the camera, AND there is no meaningful weather phenomenon in the frame. Shape:
+
+```json
+{
+  "phenomenon": "tester_selfie",
+  "features": ["<one short phrase describing the selfie>", "<optional sky/weather context if any>"],
+  "hail_size_cm": null,
+  "confidence": "high"
+}
+```
+
+Rules:
+
+- **Default confidence is `high`** — "this is a person smiling into the camera" is a clearer judgment than most weather phenomenology, same logic as the out-of-scope confidence default.
+- **Features entry names the selfie and any secondary context.** Examples: `["single-tester-smiling", "blue-sky-background"]`, `["group-selfie-three-people", "overcast-sky"]`, `["tester-with-thumbs-up", "no-sky-visible"]`. Secondary weather context in the second entry lets the reconciliation step still cite the sky state if one is visible behind the subject.
+- **Precedence over `out_of_scope`.** If both labels would apply (a selfie is by default not a weather scene), choose `tester_selfie`. The out-of-scope hatch stays reserved for genuinely unrelated submissions (houseplants, screenshots, indoor scenes with no visible sky).
+- **Precedence over weather labels.** If a selfie is in the frame AND meaningful weather is visible, still choose `tester_selfie` — the subject of the frame is the person, not the weather. Record the weather as a secondary feature. The downstream reconciliation agent can surface the weather context in its narrative if it is strong enough.
+- **Hail-size stays null.** Never estimate hail size from a selfie frame even if the tester is holding a hailstone — the demo-only framing does not earn the scale-anchor discipline.
+
+This label exists so the closed-beta demo footage shows the capture flow landing a confident, non-rejecting record on a playful submission. Remove alongside the other demo-only scaffolding on the post-hackathon cleanup pass.

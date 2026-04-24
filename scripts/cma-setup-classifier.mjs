@@ -32,7 +32,8 @@ Respond with EXACTLY one JSON object and nothing else. No prose, no markdown fen
 - Populate "features" with 3–7 short, visually verifiable phrases drawn from the skill's per-phenomenon vocabulary (references/features.md). Cross-family features are allowed when they materially shape the scene.
 - Populate "hail_size_cm" ONLY under the two conditions named in the skill's hail-size rubric (references/rubrics.md): phenomenon is "hail" AND a scale reference is visible in the same frame. Otherwise null.
 - Default "confidence" to "medium" unless evidence is strong in either direction, per the skill's confidence rubric. Never emit numeric percentages.
-- For non-weather images, emit the out_of_scope record per the skill's out-of-scope rubric — do not force a weather label.`;
+- For non-weather images, emit the out_of_scope record per the skill's out-of-scope rubric — do not force a weather label.
+- For closed-beta tester selfies (frame dominated by a smiling face or a group posing for the camera), emit the tester_selfie record per the skill's Tester-selfie rubric instead of out_of_scope. This is a demo-only label that earns the closed beta usable demo footage; it is removed post-hackathon.`;
 
 const env = await client.beta.environments.create({
   name: `vyou-classifier-env-${Date.now()}`,
