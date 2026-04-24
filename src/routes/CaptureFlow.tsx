@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { supabase } from "../lib/supabase";
 import { getReporterId } from "../lib/reporter";
+import { inviteHeaders } from "../lib/invite";
 
 type Step = "permissions" | "camera" | "heading" | "submit";
 
@@ -97,9 +98,11 @@ export default function CaptureFlow() {
 
       if (error) throw error;
       toast.success("Report submitted");
-      supabase.functions.invoke("classify", { body: { report_id: data.id } }).catch((e) => {
-        console.warn("[VYou] classify invoke failed (will retry on report view)", e);
-      });
+      supabase.functions
+        .invoke("classify", { body: { report_id: data.id }, headers: inviteHeaders() })
+        .catch((e) => {
+          console.warn("[VYou] classify invoke failed (will retry on report view)", e);
+        });
       navigate(`/report/${data.id}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";

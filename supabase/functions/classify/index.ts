@@ -1,13 +1,13 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import Anthropic from "npm:@anthropic-ai/sdk@0.91.0";
-import { buildSessionStats } from "../_shared/cost.ts";
+import { buildSessionStats, CLASSIFIER_MODEL } from "../_shared/cost.ts";
+import { requireInvite } from "../_shared/invite.ts";
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const CLASSIFIER_AGENT_ID = Deno.env.get("CLASSIFIER_AGENT_ID");
 const CLASSIFIER_ENVIRONMENT_ID = Deno.env.get("CLASSIFIER_ENVIRONMENT_ID");
-const CLASSIFIER_MODEL = Deno.env.get("CLASSIFIER_MODEL") ?? "claude-opus-4-7";
 const SEVERE_WEATHER_REPORTING_SKILL_ID = Deno.env.get("SEVERE_WEATHER_REPORTING_SKILL_ID");
 const SEVERE_WEATHER_REPORTING_SKILL_VERSION = Deno.env.get("SEVERE_WEATHER_REPORTING_SKILL_VERSION");
 
@@ -22,7 +22,7 @@ const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY! });
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-vyou-invite",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -39,6 +39,9 @@ Deno.serve(async (req) => {
 });
 
 async function handle(req: Request): Promise<Response> {
+  const invite = await requireInvite(req, supabase);
+  if (!invite.ok) return jsonResponse({ error: invite.error }, invite.status);
+
   let report_id: string | undefined;
   try {
     const body = await req.json();
@@ -47,6 +50,20 @@ async function handle(req: Request): Promise<Response> {
     return jsonResponse({ error: "invalid JSON body" }, 400);
   }
   if (!report_id) return jsonResponse({ error: "report_id required" }, 400);
+
+  // Idempotency short-circuit: if a classification already exists for this
+  // report, return it rather than opening a second paid session.
+  const { data: existingClassification } = await supabase
+    .from("classifications")
+    .select("id, phenomenon, features, confidence, hail_size_cm, session_stats")
+    .eq("report_id", report_id)
+    .eq("agent", "classifier")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (existingClassification) {
+    return jsonResponse({ classification: existingClassification, cached: true });
+  }
 
   const { data: report, error: reportErr } = await supabase
     .from("reports")
@@ -80,15 +97,21 @@ async function handle(req: Request): Promise<Response> {
   let stopReason: string | undefined;
   const DEADLINE_MS = 90_000;
   const MAX_EVENTS = 200;
-  const deadline = Date.now() + DEADLINE_MS;
+  const startedAt = Date.now();
+  const deadline = startedAt + DEADLINE_MS;
   let eventCount = 0;
   let timedOut = false;
+  // deno-lint-ignore no-explicit-any
+  let finalUsage: any = null;
+  // deno-lint-ignore no-explicit-any
+  let finalStats: any = null;
+
   try {
     for await (const event of stream) {
       eventCount++;
       if (Date.now() > deadline || eventCount > MAX_EVENTS) {
         timedOut = true;
-        console.warn(`[classify] aborting session ${session.id} — events=${eventCount} elapsed=${Date.now() - (deadline - DEADLINE_MS)}ms`);
+        console.warn(`[classify] aborting session ${session.id} — events=${eventCount} elapsed=${Date.now() - startedAt}ms`);
         break;
       }
       if (event.type === "agent.message") {
@@ -102,20 +125,19 @@ async function handle(req: Request): Promise<Response> {
         if (stopReason !== "requires_action") break;
       }
     }
+    // Retrieve BEFORE archive — usage/stats finalise when the session hits
+    // idle/terminated; archive-first was racy and produced null-usage rows.
+    try {
+      const retrieved = await anthropic.beta.sessions.retrieve(session.id);
+      // deno-lint-ignore no-explicit-any
+      finalUsage = (retrieved as any)?.usage ?? null;
+      // deno-lint-ignore no-explicit-any
+      finalStats = (retrieved as any)?.stats ?? null;
+    } catch (e) {
+      console.warn(`[classify] retrieve-for-usage failed ${session.id}:`, (e as Error)?.message);
+    }
   } finally {
     anthropic.beta.sessions.archive(session.id).catch((e) => console.warn(`[classify] archive failed ${session.id}:`, e?.message));
-  }
-
-  let finalUsage: Record<string, unknown> | null = null;
-  let finalStats: Record<string, unknown> | null = null;
-  try {
-    const retrieved = await anthropic.beta.sessions.retrieve(session.id);
-    // deno-lint-ignore no-explicit-any
-    finalUsage = (retrieved as any)?.usage ?? null;
-    // deno-lint-ignore no-explicit-any
-    finalStats = (retrieved as any)?.stats ?? null;
-  } catch (e) {
-    console.warn(`[classify] retrieve-for-usage failed ${session.id}:`, (e as Error)?.message);
   }
 
   const sessionStats = buildSessionStats({
@@ -124,14 +146,24 @@ async function handle(req: Request): Promise<Response> {
     skill_id: SEVERE_WEATHER_REPORTING_SKILL_ID,
     skill_version: SEVERE_WEATHER_REPORTING_SKILL_VERSION,
     model: CLASSIFIER_MODEL,
-    // deno-lint-ignore no-explicit-any
-    usage: finalUsage as any,
-    // deno-lint-ignore no-explicit-any
-    stats: finalStats as any,
+    usage: finalUsage,
+    stats: finalStats,
+    timed_out: timedOut,
   });
 
+  // Timeout path: persist a row so the Lane B cost query sees the costliest
+  // runs. phenomenon=null + confidence=null is the UI signal for "no verdict".
   if (timedOut) {
-    return jsonResponse({ error: "classifier timed out", session_id: session.id, events: eventCount }, 504);
+    const row = await upsertClassification({
+      report_id,
+      agent: "classifier",
+      phenomenon: null,
+      features: null,
+      hail_size_cm: null,
+      confidence: null,
+      session_stats: sessionStats,
+    });
+    return jsonResponse({ classification: row, timed_out: true, session_id: session.id }, 504);
   }
 
   const parsed = extractJson(transcript);
@@ -139,22 +171,28 @@ async function handle(req: Request): Promise<Response> {
     return jsonResponse({ error: "agent did not return parseable JSON", transcript }, 502);
   }
 
-  const { data: classification, error: classErr } = await supabase
-    .from("classifications")
-    .insert({
-      report_id,
-      agent: "classifier",
-      phenomenon: typeof parsed.phenomenon === "string" ? parsed.phenomenon : null,
-      features: Array.isArray(parsed.features) ? parsed.features : null,
-      hail_size_cm: typeof parsed.hail_size_cm === "number" ? parsed.hail_size_cm : null,
-      confidence: ["low", "medium", "high"].includes(parsed.confidence) ? parsed.confidence : null,
-      session_stats: sessionStats,
-    })
-    .select("id, phenomenon, features, confidence, hail_size_cm, session_stats")
-    .single();
-  if (classErr) return jsonResponse({ error: `classifications insert: ${classErr.message}` }, 500);
+  const classification = await upsertClassification({
+    report_id,
+    agent: "classifier",
+    phenomenon: typeof parsed.phenomenon === "string" ? parsed.phenomenon : null,
+    features: Array.isArray(parsed.features) ? parsed.features : null,
+    hail_size_cm: typeof parsed.hail_size_cm === "number" ? parsed.hail_size_cm : null,
+    confidence: ["low", "medium", "high"].includes(parsed.confidence) ? parsed.confidence : null,
+    session_stats: sessionStats,
+  });
 
   return jsonResponse({ classification, session_id: session.id });
+}
+
+// deno-lint-ignore no-explicit-any
+async function upsertClassification(fields: Record<string, any>): Promise<any> {
+  const { data, error } = await supabase
+    .from("classifications")
+    .insert(fields)
+    .select("id, phenomenon, features, confidence, hail_size_cm, session_stats")
+    .single();
+  if (error) throw new Error(`classifications insert: ${error.message}`);
+  return data;
 }
 
 function jsonResponse(body: unknown, status = 200): Response {

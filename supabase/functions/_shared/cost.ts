@@ -1,5 +1,16 @@
-// Shared pricing + usage → USD helper for the Classifier and Reconciliation edge functions.
-// Rates are $ per 1M tokens. Pulled from the Anthropic pricing page on 2026-04-24.
+// Shared pricing + usage → USD helper for the Classifier and Reconciliation
+// edge functions. Rates are $ per 1M tokens, pulled from the Anthropic
+// pricing page on 2026-04-24.
+//
+// The model constants below are the single source of truth for which model
+// each agent uses. The setup scripts pin the same literal at agents.create()
+// time, so flipping a model is a deliberate two-step edit (here + script +
+// re-provision), not a silent Edge-Function env toggle. This is intentional:
+// the earlier env-override pattern let cost_usd silently disagree with the
+// agent's real model when the env var was flipped without re-provisioning.
+
+export const CLASSIFIER_MODEL = "claude-opus-4-7";
+export const RECONCILIATION_MODEL = "claude-opus-4-7";
 
 export type ModelId =
   | "claude-opus-4-7"
@@ -42,8 +53,9 @@ export function costUsd(model: string, usage: Usage | null | undefined): number 
   return Math.round(total * 10_000) / 10_000;
 }
 
-// Build the persisted session_stats blob. Callers pass the model + skill identity + the
-// `usage` and `stats` objects the sessions.retrieve() call returns at archive-time.
+// Build the persisted session_stats blob. `timed_out` is recorded alongside
+// the cost receipt so eval/ops queries can separate timeout cost from
+// successful-run cost.
 export function buildSessionStats(args: {
   session_id: string;
   agent_id: string;
@@ -52,6 +64,7 @@ export function buildSessionStats(args: {
   model: string;
   usage: Usage | null | undefined;
   stats?: { duration_seconds?: number } | null | undefined;
+  timed_out?: boolean;
 }): Record<string, unknown> {
   const duration_ms = args.stats?.duration_seconds != null
     ? Math.round(args.stats.duration_seconds * 1000)
@@ -65,5 +78,6 @@ export function buildSessionStats(args: {
     duration_ms,
     usage: args.usage ?? null,
     cost_usd: costUsd(args.model, args.usage),
+    timed_out: args.timed_out ?? false,
   };
 }

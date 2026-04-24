@@ -1,14 +1,14 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import Anthropic from "npm:@anthropic-ai/sdk@0.91.0";
-import { buildSessionStats } from "../_shared/cost.ts";
+import { buildSessionStats, RECONCILIATION_MODEL } from "../_shared/cost.ts";
 import { radolanFrameForReport } from "../_shared/radolan.ts";
+import { requireInvite } from "../_shared/invite.ts";
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const RECONCILIATION_AGENT_ID = Deno.env.get("RECONCILIATION_AGENT_ID");
 const RECONCILIATION_ENVIRONMENT_ID = Deno.env.get("RECONCILIATION_ENVIRONMENT_ID");
-const RECONCILIATION_MODEL = Deno.env.get("RECONCILIATION_MODEL") ?? "claude-opus-4-7";
 const SEVERE_WEATHER_REPORTING_SKILL_ID = Deno.env.get("SEVERE_WEATHER_REPORTING_SKILL_ID");
 const SEVERE_WEATHER_REPORTING_SKILL_VERSION = Deno.env.get("SEVERE_WEATHER_REPORTING_SKILL_VERSION");
 
@@ -23,7 +23,7 @@ const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY! });
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-vyou-invite",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -40,6 +40,9 @@ Deno.serve(async (req) => {
 });
 
 async function handle(req: Request): Promise<Response> {
+  const invite = await requireInvite(req, supabase);
+  if (!invite.ok) return jsonResponse({ error: invite.error }, invite.status);
+
   let classification_id: string | undefined;
   try {
     const body = await req.json();
@@ -48,6 +51,18 @@ async function handle(req: Request): Promise<Response> {
     return jsonResponse({ error: "invalid JSON body" }, 400);
   }
   if (!classification_id) return jsonResponse({ error: "classification_id required" }, 400);
+
+  // Idempotency short-circuit: if a verdict already exists, return it.
+  // The unique constraint on verified_reports(classification_id) is the
+  // durable guard; this pre-check avoids opening a paid session unnecessarily.
+  const { data: existing } = await supabase
+    .from("verified_reports")
+    .select("*")
+    .eq("classification_id", classification_id)
+    .maybeSingle();
+  if (existing) {
+    return jsonResponse({ verified_report: existing, cached: true });
+  }
 
   const { data: classification, error: clsErr } = await supabase
     .from("classifications")
@@ -116,15 +131,21 @@ Reconcile per the output contract.`,
   let stopReason: string | undefined;
   const DEADLINE_MS = 90_000;
   const MAX_EVENTS = 200;
-  const deadline = Date.now() + DEADLINE_MS;
+  const startedAt = Date.now();
+  const deadline = startedAt + DEADLINE_MS;
   let eventCount = 0;
   let timedOut = false;
+  // deno-lint-ignore no-explicit-any
+  let finalUsage: any = null;
+  // deno-lint-ignore no-explicit-any
+  let finalStats: any = null;
+
   try {
     for await (const event of stream) {
       eventCount++;
       if (Date.now() > deadline || eventCount > MAX_EVENTS) {
         timedOut = true;
-        console.warn(`[reconcile] aborting session ${session.id} — events=${eventCount}`);
+        console.warn(`[reconcile] aborting session ${session.id} — events=${eventCount} elapsed=${Date.now() - startedAt}ms`);
         break;
       }
       if (event.type === "agent.message") {
@@ -138,21 +159,19 @@ Reconcile per the output contract.`,
         if (stopReason !== "requires_action") break;
       }
     }
+    // Retrieve BEFORE archive — usage/stats are finalised when the session is
+    // idle or terminated; archiving first was racy and produced null rows.
+    try {
+      const retrieved = await anthropic.beta.sessions.retrieve(session.id);
+      // deno-lint-ignore no-explicit-any
+      finalUsage = (retrieved as any)?.usage ?? null;
+      // deno-lint-ignore no-explicit-any
+      finalStats = (retrieved as any)?.stats ?? null;
+    } catch (e) {
+      console.warn(`[reconcile] retrieve-for-usage failed ${session.id}:`, (e as Error)?.message);
+    }
   } finally {
-    // Best-effort final-stats pull so session_stats carries cost receipts.
     anthropic.beta.sessions.archive(session.id).catch((e) => console.warn(`[reconcile] archive failed ${session.id}:`, e?.message));
-  }
-
-  let finalUsage: Record<string, unknown> | null = null;
-  let finalStats: Record<string, unknown> | null = null;
-  try {
-    const retrieved = await anthropic.beta.sessions.retrieve(session.id);
-    // deno-lint-ignore no-explicit-any
-    finalUsage = (retrieved as any)?.usage ?? null;
-    // deno-lint-ignore no-explicit-any
-    finalStats = (retrieved as any)?.stats ?? null;
-  } catch (e) {
-    console.warn(`[reconcile] retrieve-for-usage failed ${session.id}:`, (e as Error)?.message);
   }
 
   const sessionStats = buildSessionStats({
@@ -161,14 +180,25 @@ Reconcile per the output contract.`,
     skill_id: SEVERE_WEATHER_REPORTING_SKILL_ID,
     skill_version: SEVERE_WEATHER_REPORTING_SKILL_VERSION,
     model: RECONCILIATION_MODEL,
-    // deno-lint-ignore no-explicit-any
-    usage: finalUsage as any,
-    // deno-lint-ignore no-explicit-any
-    stats: finalStats as any,
+    usage: finalUsage,
+    stats: finalStats,
+    timed_out: timedOut,
   });
 
+  // Timeout path: persist a row with session_stats so cost receipts are not
+  // lost for the costliest runs. Verdict is `inconclusive` with a marker
+  // rationale — the UI renders this as a clean inconclusive card.
   if (timedOut) {
-    return jsonResponse({ error: "reconciliation timed out", session_id: session.id, events: eventCount }, 504);
+    const row = await insertVerifiedReport({
+      report_id: classification.report_id,
+      classification_id: classification.id,
+      radar_frame_url: radar.url,
+      verdict: "inconclusive",
+      rationale: "Reconciliation timed out (>90s or >200 events). The radar frame and classifier record were not fully compared.",
+      confidence: "low",
+      session_stats: sessionStats,
+    });
+    return jsonResponse({ verified_report: row, timed_out: true, session_id: session.id }, 504);
   }
 
   const parsed = extractJson(transcript);
@@ -183,22 +213,39 @@ Reconcile per the output contract.`,
     ? (parsed.confidence as string)
     : null;
 
-  const { data: verified, error: vrErr } = await supabase
+  const row = await insertVerifiedReport({
+    report_id: classification.report_id,
+    classification_id: classification.id,
+    radar_frame_url: radar.url,
+    verdict,
+    rationale: typeof parsed.rationale === "string" ? parsed.rationale : null,
+    confidence,
+    session_stats: sessionStats,
+  });
+
+  return jsonResponse({ verified_report: row, session_id: session.id });
+}
+
+// deno-lint-ignore no-explicit-any
+async function insertVerifiedReport(fields: Record<string, any>): Promise<any> {
+  const { data, error } = await supabase
     .from("verified_reports")
-    .insert({
-      report_id: classification.report_id,
-      classification_id: classification.id,
-      radar_frame_url: radar.url,
-      verdict,
-      rationale: typeof parsed.rationale === "string" ? parsed.rationale : null,
-      confidence,
-      session_stats: sessionStats,
-    })
+    .insert(fields)
     .select("id, verdict, rationale, confidence, radar_frame_url, created_at")
     .single();
-  if (vrErr) return jsonResponse({ error: `verified_reports insert: ${vrErr.message}` }, 500);
+  if (!error) return data;
 
-  return jsonResponse({ verified_report: verified, session_id: session.id });
+  // unique_violation: another invocation landed the row between the
+  // pre-check and this insert. Return the row that won.
+  if (error.code === "23505") {
+    const { data: winner } = await supabase
+      .from("verified_reports")
+      .select("id, verdict, rationale, confidence, radar_frame_url, created_at")
+      .eq("classification_id", fields.classification_id)
+      .maybeSingle();
+    if (winner) return winner;
+  }
+  throw new Error(`verified_reports insert: ${error.message}`);
 }
 
 function jsonResponse(body: unknown, status = 200): Response {

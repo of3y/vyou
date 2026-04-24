@@ -1,5 +1,17 @@
-// DWD RADOLAN WMS frame URL for a point + time. Matches the map-layer source in MapView.tsx.
-// RADOLAN cadence is ~5 minutes, so we round capture time down to the nearest slot.
+// DWD WMS frame URL for a point + time. Matches the map-layer source in MapView.tsx.
+//
+// The layer `dwd:Niederschlagsradar` is DWD's RV product — a 1km, 5-minute
+// composite that BLENDS the most recent RADOLAN observation with up to ~2h
+// of nowcast forecast. For reports captured in the past, the WMS `time=`
+// parameter resolves to the historical observation slot and the forecast
+// window is irrelevant. The time dimension extent is limited to ~3 days
+// back, so reports older than that will silently snap to the default
+// `current` frame — acceptable for the live-demo cohort (all reports are
+// recent) but flagged here so a future session does not mistake this layer
+// for a pure-observation archive.
+//
+// Reference: GetCapabilities Abstract — "Niederschlagsradar und -vorhersage,
+// Alias für RV-Produkt (Auflösung 1km), 5 minütig, mm/h".
 
 const DWD_WMS = "https://maps.dwd.de/geoserver/dwd/wms";
 const LAYER = "dwd:Niederschlagsradar";

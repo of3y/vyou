@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import MapView from "../components/MapView";
 import type { Classification, Confidence, Report, SessionStats, VerifiedReport } from "../lib/types";
+import { inviteHeaders } from "../lib/invite";
 
 const POLL_INTERVAL_MS = 2500;
 const POLL_TIMEOUT_MS = 90_000;
@@ -69,8 +70,14 @@ export default function ReportDetail() {
     const startedAt = Date.now();
 
     supabase.functions
-      .invoke("reconcile", { body: { classification_id: classification.id } })
-      .catch((e) => console.warn("[reconcile] invoke failed", e));
+      .invoke("reconcile", {
+        body: { classification_id: classification.id },
+        headers: inviteHeaders(),
+      })
+      .catch((e) => {
+        console.warn("[reconcile] invoke failed", e);
+        if (!cancelled) setVerifyError(`Reconciliation could not start: ${e?.message ?? e}`);
+      });
 
     async function poll() {
       const { data } = await supabase
