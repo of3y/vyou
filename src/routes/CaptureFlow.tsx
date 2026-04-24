@@ -97,6 +97,9 @@ export default function CaptureFlow() {
 
       if (error) throw error;
       toast.success("Report submitted");
+      supabase.functions.invoke("classify", { body: { report_id: data.id } }).catch((e) => {
+        console.warn("[VYou] classify invoke failed (will retry on report view)", e);
+      });
       navigate(`/report/${data.id}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";

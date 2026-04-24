@@ -13,3 +13,16 @@ export type Report = {
   caption: string | null;
   status: ReportStatus;
 };
+
+export type Confidence = "low" | "medium" | "high";
+
+export type Classification = {
+  id: string;
+  report_id: string;
+  agent: "classifier";
+  phenomenon: string | null;
+  features: string[] | null;
+  hail_size_cm: number | null;
+  confidence: Confidence | null;
+  created_at: string;
+};
