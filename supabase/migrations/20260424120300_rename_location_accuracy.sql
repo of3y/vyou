@@ -9,7 +9,11 @@
 alter table public.reports
   rename column heading_accuracy_m to location_accuracy_m;
 
-create or replace view public.reports_v
+-- `create or replace view` refuses to rename an existing column, so drop
+-- the view first and recreate it with the new column name.
+drop view if exists public.reports_v;
+
+create view public.reports_v
 with (security_invoker = true) as
 select
   id,
