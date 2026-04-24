@@ -20,3 +20,6 @@ execution-checklist.html
 # Obsidian personal pane/cursor state — constantly churns, not shared
 docs/.obsidian/workspace.json
 docs/.obsidian/workspace-mobile.json
+
+# Claude Code scheduled-task lock (local runtime state)
+.claude/scheduled_tasks.lock
