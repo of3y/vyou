@@ -74,20 +74,36 @@ async function handle(req: Request): Promise<Response> {
 
   let transcript = "";
   let stopReason: string | undefined;
-  for await (const event of stream) {
-    if (event.type === "agent.message") {
-      for (const block of event.content ?? []) {
-        if (block.type === "text") transcript += block.text;
+  const DEADLINE_MS = 90_000;
+  const MAX_EVENTS = 200;
+  const deadline = Date.now() + DEADLINE_MS;
+  let eventCount = 0;
+  let timedOut = false;
+  try {
+    for await (const event of stream) {
+      eventCount++;
+      if (Date.now() > deadline || eventCount > MAX_EVENTS) {
+        timedOut = true;
+        console.warn(`[classify] aborting session ${session.id} — events=${eventCount} elapsed=${Date.now() - (deadline - DEADLINE_MS)}ms`);
+        break;
+      }
+      if (event.type === "agent.message") {
+        for (const block of event.content ?? []) {
+          if (block.type === "text") transcript += block.text;
+        }
+      }
+      if (event.type === "session.status_terminated") break;
+      if (event.type === "session.status_idle") {
+        stopReason = event.stop_reason?.type;
+        if (stopReason !== "requires_action") break;
       }
     }
-    if (event.type === "session.status_terminated") break;
-    if (event.type === "session.status_idle") {
-      stopReason = event.stop_reason?.type;
-      if (stopReason !== "requires_action") break;
-    }
+  } finally {
+    anthropic.beta.sessions.archive(session.id).catch((e) => console.warn(`[classify] archive failed ${session.id}:`, e?.message));
   }
-
-  anthropic.beta.sessions.archive(session.id).catch(() => {});
+  if (timedOut) {
+    return jsonResponse({ error: "classifier timed out", session_id: session.id, events: eventCount }, 504);
+  }
 
   const parsed = extractJson(transcript);
   if (!parsed) {

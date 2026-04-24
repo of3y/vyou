@@ -48,6 +48,15 @@ const agent = await client.beta.agents.create({
     "VYou Classifier — vision-only meteorological observer that returns a structured phenomenon + features + confidence record for a single sky photo, grounded in the severe-weather-reporting skill.",
   system: SYSTEM_PROMPT,
   skills: [{ type: "custom", skill_id: SKILL_ID, version: SKILL_VERSION }],
+  tools: [
+    {
+      type: "agent_toolset_20260401",
+      default_config: { enabled: false },
+      configs: [
+        { name: "read", enabled: true, permission_policy: { type: "always_allow" } },
+      ],
+    },
+  ],
 });
 console.log(`agent_id        ${agent.id}`);
 console.log(`agent_version   ${agent.version}`);
