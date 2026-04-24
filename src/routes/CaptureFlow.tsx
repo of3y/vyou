@@ -410,7 +410,10 @@ function SubmitStep({
   const [enlarged, setEnlarged] = useState(false);
   return (
     <div className="flex h-full flex-col">
-      <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
+      <div
+        className="flex flex-1 flex-col gap-3 overflow-y-auto p-4"
+        style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}
+      >
         <button
           type="button"
           onClick={() => setEnlarged(true)}
@@ -429,19 +432,26 @@ function SubmitStep({
         <textarea
           value={caption}
           onChange={(e) => onCaption(e.target.value.slice(0, 280))}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              (e.target as HTMLTextAreaElement).blur();
+            }
+          }}
           rows={2}
+          autoComplete="off"
+          autoCorrect="on"
+          autoCapitalize="sentences"
+          spellCheck
+          enterKeyHint="done"
+          name="caption"
           className="rounded-lg border border-white/10 bg-white/5 p-3"
           placeholder="Caption (optional)"
         />
-      </div>
-      <div
-        className="border-t border-white/10 p-4"
-        style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}
-      >
         <button
           onClick={onSubmit}
           disabled={submitting}
-          className="w-full rounded-full bg-emerald-500 px-8 py-3 text-sm font-semibold text-black active:scale-95 disabled:opacity-50"
+          className="mt-2 w-full rounded-full bg-emerald-500 px-8 py-3 text-sm font-semibold text-black active:scale-95 disabled:opacity-50"
         >
           {submitting ? "Submitting…" : "Submit report"}
         </button>
@@ -454,7 +464,10 @@ function SubmitStep({
           aria-label="Close enlarged photo"
         >
           <img src={photoUrl} alt="Captured sky (enlarged)" className="max-h-full max-w-full object-contain" />
-          <span className="absolute right-4 top-4 rounded-full bg-white/10 px-3 py-1 text-xs text-white/80" style={{ top: "calc(1rem + env(safe-area-inset-top))" }}>
+          <span
+            className="absolute right-4 rounded-full bg-white/10 px-3 py-1 text-xs text-white/80"
+            style={{ top: "calc(1rem + env(safe-area-inset-top))" }}
+          >
             Tap to close
           </span>
         </button>

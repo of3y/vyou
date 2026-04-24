@@ -20,6 +20,7 @@ export default function ReportDetail() {
   const [verified, setVerified] = useState<VerifiedReport | null>(null);
   const [verifyError, setVerifyError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [enlarged, setEnlarged] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -133,12 +134,22 @@ export default function ReportDetail() {
       <main className="flex-1 space-y-4 overflow-y-auto p-6 text-sm">
         {report.photo_url && (
           <section>
-            <img
-              src={report.photo_url}
-              alt="Submitted sky photo"
-              className="w-full rounded-lg border border-white/10"
-              loading="lazy"
-            />
+            <button
+              type="button"
+              onClick={() => setEnlarged(true)}
+              className="relative block w-full overflow-hidden rounded-lg border border-white/10 bg-black active:scale-[0.99]"
+              aria-label="Enlarge photo"
+            >
+              <img
+                src={report.photo_url}
+                alt="Submitted sky photo"
+                className="w-full"
+                loading="lazy"
+              />
+              <span className="pointer-events-none absolute bottom-2 right-2 rounded-full bg-black/70 px-2 py-0.5 text-[10px] uppercase tracking-wider text-white/70 backdrop-blur">
+                Tap to enlarge
+              </span>
+            </button>
           </section>
         )}
         <ClassificationCard classification={classification} error={classifyError} />
@@ -162,6 +173,26 @@ export default function ReportDetail() {
           </section>
         )}
       </main>
+      {enlarged && report.photo_url && (
+        <button
+          type="button"
+          onClick={() => setEnlarged(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 p-4"
+          aria-label="Close enlarged photo"
+        >
+          <img
+            src={report.photo_url}
+            alt="Submitted sky photo (enlarged)"
+            className="max-h-full max-w-full object-contain"
+          />
+          <span
+            className="absolute right-4 rounded-full bg-white/10 px-3 py-1 text-xs text-white/80"
+            style={{ top: "calc(1rem + env(safe-area-inset-top))" }}
+          >
+            Tap to close
+          </span>
+        </button>
+      )}
     </div>
   );
 }
