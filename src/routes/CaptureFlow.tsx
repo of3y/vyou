@@ -26,8 +26,16 @@ export default function CaptureFlow() {
   const [submitting, setSubmitting] = useState(false);
   const navigate = useNavigate();
 
+  // Revoke the capture blob URL when it's replaced (retake) or the flow unmounts.
+  useEffect(() => {
+    const url = capture?.blobUrl;
+    if (!url) return;
+    return () => URL.revokeObjectURL(url);
+  }, [capture?.blobUrl]);
+
   useEffect(() => {
     if (step !== "camera" && step !== "heading") return;
+    if (typeof DeviceOrientationEvent === "undefined") return;
     const handler = (e: DeviceOrientationEvent) => {
       const ios = e as DeviceOrientationEvent & {
         webkitCompassHeading?: number;
@@ -49,12 +57,14 @@ export default function CaptureFlow() {
 
   async function requestPermissions() {
     try {
-      const orientation = (DeviceOrientationEvent as unknown as { requestPermission?: () => Promise<string> })
-        .requestPermission;
-      if (typeof orientation === "function") {
-        const result = await orientation();
-        if (result !== "granted") {
-          toast("Orientation permission denied — manual heading only");
+      if (typeof DeviceOrientationEvent !== "undefined") {
+        const orientation = (DeviceOrientationEvent as unknown as { requestPermission?: () => Promise<string> })
+          .requestPermission;
+        if (typeof orientation === "function") {
+          const result = await orientation();
+          if (result !== "granted") {
+            toast("Orientation permission denied — manual heading only");
+          }
         }
       }
       setStep("camera");
@@ -88,7 +98,7 @@ export default function CaptureFlow() {
           photo_url: publicUrl.publicUrl,
           location: `POINT(${capture.lon} ${capture.lat})`,
           heading_degrees: heading,
-          heading_accuracy_m: capture.accuracyM,
+          location_accuracy_m: capture.accuracyM,
           captured_at: capture.capturedAt,
           caption: caption.trim() || null,
           status: "accepted",
@@ -261,6 +271,7 @@ function CameraStep({
         accuracyM: position.coords.accuracy ?? null,
       });
     } catch (err) {
+      URL.revokeObjectURL(blobUrl);
       toast.error(explainGeoError(err));
     }
   }

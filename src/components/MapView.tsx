@@ -41,9 +41,11 @@ async function fetchConeFeatures(): Promise<FeatureCollection<Polygon>> {
   return { type: "FeatureCollection", features };
 }
 
-export default function MapView({ center = MUNICH, zoom = 9, className }: Props) {
+export default function MapView({ center, zoom, className }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
+  const initialCenter = useRef(center ?? MUNICH);
+  const initialZoom = useRef(zoom ?? 9);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -74,8 +76,8 @@ export default function MapView({ center = MUNICH, zoom = 9, className }: Props)
           { id: "radolan", type: "raster", source: "radolan", paint: { "raster-opacity": 0.55 } },
         ],
       },
-      center,
-      zoom,
+      center: initialCenter.current,
+      zoom: initialZoom.current,
     });
 
     map.addControl(new maplibregl.NavigationControl({ showCompass: true }), "top-right");
@@ -123,7 +125,21 @@ export default function MapView({ center = MUNICH, zoom = 9, className }: Props)
       map.remove();
       mapRef.current = null;
     };
-  }, [center, zoom]);
+  }, []);
+
+  const lon = center?.[0];
+  const lat = center?.[1];
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || lon == null || lat == null) return;
+    map.setCenter([lon, lat]);
+  }, [lon, lat]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || zoom == null) return;
+    map.setZoom(zoom);
+  }, [zoom]);
 
   return <div ref={containerRef} className={className ?? "h-full w-full"} />;
 }

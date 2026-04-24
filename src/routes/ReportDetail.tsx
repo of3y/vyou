@@ -4,6 +4,7 @@ import { supabase } from "../lib/supabase";
 import MapView from "../components/MapView";
 import type { Classification, Confidence, Report, SessionStats, VerifiedReport } from "../lib/types";
 import { inviteHeaders } from "../lib/invite";
+import { prettyPhenomenon } from "../lib/format";
 
 const POLL_INTERVAL_MS = 2500;
 const CLASSIFY_POLL_TIMEOUT_MS = 90_000;
@@ -12,6 +13,7 @@ const RECONCILE_POLL_TIMEOUT_MS = 180_000;
 // Module-scoped: survives component remount within the same browser session,
 // keyed by classification id. Server-side idempotency is the durable guard.
 const reconcileDispatchSet = new Set<string>();
+const classifyDispatchSet = new Set<string>();
 
 const DEV_DEBUG =
   import.meta.env.DEV ||
@@ -39,12 +41,15 @@ export default function ReportDetail() {
     })();
   }, [id]);
 
+  const [classifyAttempt, setClassifyAttempt] = useState(0);
+
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
     const startedAt = Date.now();
 
-    async function poll() {
+    async function tick() {
+      if (cancelled) return;
       const { data } = await supabase
         .from("classifications")
         .select("*")
@@ -58,17 +63,40 @@ export default function ReportDetail() {
         setClassification(data as Classification);
         return;
       }
+      // On first poll pass, dispatch classify if no existing row and we
+      // haven't already dispatched it in this browser session. Classify is
+      // idempotent server-side (keyed on report_id), so a double-dispatch
+      // with the CaptureFlow fire-and-forget invoke is safe — the second
+      // call returns the cached classification.
+      const dispatchKey = id!;
+      if (!classifyDispatchSet.has(dispatchKey)) {
+        classifyDispatchSet.add(dispatchKey);
+        supabase.functions
+          .invoke("classify", { body: { report_id: id }, headers: inviteHeaders() })
+          .catch((e) => {
+            // FunctionsFetchError on iOS PWA is expected for long calls;
+            // polling will still pick up the server-written row.
+            console.warn("[classify] invoke fetch failed (polling continues)", e);
+          });
+      }
       if (Date.now() - startedAt > CLASSIFY_POLL_TIMEOUT_MS) {
-        setClassifyError("Classifier did not respond within 90s. Try again from the map.");
+        setClassifyError("Classifier did not respond within 90s.");
         return;
       }
-      setTimeout(poll, POLL_INTERVAL_MS);
+      setTimeout(tick, POLL_INTERVAL_MS);
     }
-    poll();
+    tick();
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [id, classifyAttempt]);
+
+  function retryClassify() {
+    if (!id) return;
+    classifyDispatchSet.delete(id);
+    setClassifyError(null);
+    setClassifyAttempt((n) => n + 1);
+  }
 
   // Module-scoped guard so a remount (iOS bfcache eviction, back-nav, tab
   // restore) does not re-fire reconcile for a classification we already
@@ -208,7 +236,7 @@ export default function ReportDetail() {
             </button>
           </section>
         )}
-        <ClassificationCard classification={classification} error={classifyError} />
+        <ClassificationCard classification={classification} error={classifyError} onRetry={retryClassify} />
         <VerifiedCard verified={verified} error={verifyError} hasClassification={!!classification} />
         <section>
           <p className="text-white/50">Heading</p>
@@ -256,14 +284,23 @@ export default function ReportDetail() {
 function ClassificationCard({
   classification,
   error,
+  onRetry,
 }: {
   classification: Classification | null;
   error: string | null;
+  onRetry: () => void;
 }) {
   if (error) {
     return (
-      <section className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-xs text-red-200">
-        {error}
+      <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-xs text-red-200">
+        <span>{error}</span>
+        <button
+          type="button"
+          onClick={onRetry}
+          className="rounded-full bg-red-500/20 px-3 py-1 text-[11px] font-medium text-red-100 active:scale-95"
+        >
+          Retry
+        </button>
       </section>
     );
   }
@@ -394,7 +431,3 @@ function CostFooter({ stats, label }: { stats: SessionStats | null; label: strin
   );
 }
 
-function prettyPhenomenon(value: string | null): string {
-  if (!value) return "Unknown";
-  return value.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-}

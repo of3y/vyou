@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { inviteHeaders } from "../lib/invite";
 import type { Classification, Report, VerifiedReport } from "../lib/types";
+import { prettyPhenomenon } from "../lib/format";
 
 type Row = {
   report: Report;
@@ -15,6 +16,7 @@ const LIMIT = 50;
 export default function ReportsList() {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [partialError, setPartialError] = useState<string | null>(null);
   const [busyFor, setBusyFor] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -49,6 +51,14 @@ export default function ReportsList() {
         .in("report_id", ids)
         .order("created_at", { ascending: false }),
     ]);
+
+    // Partial-load warnings: reports loaded, but classifications or verdicts
+    // failed to fetch. Surface the failure rather than rendering the gap as
+    // "awaiting classification" / "no verdict".
+    const partialErrors: string[] = [];
+    if (clsRes.error) partialErrors.push(`classifications: ${clsRes.error.message}`);
+    if (verRes.error) partialErrors.push(`verified reports: ${verRes.error.message}`);
+    setPartialError(partialErrors.length ? partialErrors.join(" · ") : null);
 
     const classifications = (clsRes.data ?? []) as Classification[];
     const verifieds = (verRes.data ?? []) as VerifiedReport[];
@@ -98,6 +108,8 @@ export default function ReportsList() {
           .from("verified_reports")
           .select("*")
           .eq("classification_id", cid)
+          .order("created_at", { ascending: false })
+          .limit(1)
           .maybeSingle();
         if (data && data.id !== row.verified?.id) break;
       }
@@ -134,6 +146,11 @@ export default function ReportsList() {
       {actionError && (
         <p className="mx-4 mb-2 rounded border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">
           {actionError}
+        </p>
+      )}
+      {partialError && (
+        <p className="mx-4 mb-2 rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+          Partial load — {partialError}
         </p>
       )}
 
@@ -241,7 +258,3 @@ function VerdictPill({ verdict }: { verdict: VerifiedReport["verdict"] }) {
   );
 }
 
-function prettyPhenomenon(value: string | null): string {
-  if (!value) return "Unknown";
-  return value.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-}

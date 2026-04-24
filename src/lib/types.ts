@@ -7,7 +7,7 @@ export type Report = {
   lon: number;
   lat: number;
   heading_degrees: number;
-  heading_accuracy_m: number | null;
+  location_accuracy_m: number | null;
   captured_at: string;
   submitted_at: string;
   caption: string | null;
