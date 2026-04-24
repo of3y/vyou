@@ -6,8 +6,22 @@
 -- downstream consumers (confidence heuristics, analytics) don't mis-read it.
 -- A dedicated compass_accuracy_deg column can be added later if needed.
 
-alter table public.reports
-  rename column heading_accuracy_m to location_accuracy_m;
+-- Idempotent: the rename may have already partially run (original
+-- version of this migration failed on the view step after renaming
+-- the column).
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'reports'
+      and column_name = 'heading_accuracy_m'
+  ) then
+    alter table public.reports
+      rename column heading_accuracy_m to location_accuracy_m;
+  end if;
+end $$;
 
 -- `create or replace view` refuses to rename an existing column, so drop
 -- the view first and recreate it with the new column name.
