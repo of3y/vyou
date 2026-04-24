@@ -206,7 +206,11 @@ function CameraStep({
     (async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: facing } },
+          video: {
+            facingMode: { ideal: facing },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+          },
           audio: false,
         });
         if (cancelled) {
@@ -403,19 +407,25 @@ function SubmitStep({
   onSubmit: () => void;
   submitting: boolean;
 }) {
+  const [enlarged, setEnlarged] = useState(false);
   return (
     <div className="flex h-full flex-col">
-      <div className="relative flex-1 overflow-hidden bg-black">
-        <img src={photoUrl} alt="Captured sky" className="h-full w-full object-cover" />
-        <div className="absolute bottom-4 left-4 flex items-center gap-2 rounded-full bg-black/70 px-3 py-1.5 text-sm text-white/90 backdrop-blur">
+      <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
+        <button
+          type="button"
+          onClick={() => setEnlarged(true)}
+          className="relative overflow-hidden rounded-lg border border-white/10 bg-black active:scale-[0.99]"
+          aria-label="Enlarge photo"
+        >
+          <img src={photoUrl} alt="Captured sky" className="max-h-[40dvh] w-full object-contain" />
+          <span className="pointer-events-none absolute bottom-2 right-2 rounded-full bg-black/70 px-2 py-0.5 text-[10px] uppercase tracking-wider text-white/70 backdrop-blur">
+            Tap to enlarge
+          </span>
+        </button>
+        <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white/90 self-start">
           <span className="text-white/50">Heading</span>
           <span className="tabular-nums font-semibold">{Math.round(heading)}°</span>
         </div>
-      </div>
-      <div
-        className="flex flex-col gap-3 border-t border-white/10 p-4"
-        style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}
-      >
         <textarea
           value={caption}
           onChange={(e) => onCaption(e.target.value.slice(0, 280))}
@@ -423,14 +433,32 @@ function SubmitStep({
           className="rounded-lg border border-white/10 bg-white/5 p-3"
           placeholder="Caption (optional)"
         />
+      </div>
+      <div
+        className="border-t border-white/10 p-4"
+        style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}
+      >
         <button
           onClick={onSubmit}
           disabled={submitting}
-          className="rounded-full bg-emerald-500 px-8 py-3 text-sm font-semibold text-black active:scale-95 disabled:opacity-50"
+          className="w-full rounded-full bg-emerald-500 px-8 py-3 text-sm font-semibold text-black active:scale-95 disabled:opacity-50"
         >
           {submitting ? "Submitting…" : "Submit report"}
         </button>
       </div>
+      {enlarged && (
+        <button
+          type="button"
+          onClick={() => setEnlarged(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 p-4"
+          aria-label="Close enlarged photo"
+        >
+          <img src={photoUrl} alt="Captured sky (enlarged)" className="max-h-full max-w-full object-contain" />
+          <span className="absolute right-4 top-4 rounded-full bg-white/10 px-3 py-1 text-xs text-white/80" style={{ top: "calc(1rem + env(safe-area-inset-top))" }}>
+            Tap to close
+          </span>
+        </button>
+      )}
     </div>
   );
 }
