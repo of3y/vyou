@@ -1,18 +1,19 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import Anthropic from "npm:@anthropic-ai/sdk@0.91.0";
 import { buildSessionStats } from "../_shared/cost.ts";
+import { radolanFrameForReport } from "../_shared/radolan.ts";
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-const CLASSIFIER_AGENT_ID = Deno.env.get("CLASSIFIER_AGENT_ID");
-const CLASSIFIER_ENVIRONMENT_ID = Deno.env.get("CLASSIFIER_ENVIRONMENT_ID");
-const CLASSIFIER_MODEL = Deno.env.get("CLASSIFIER_MODEL") ?? "claude-opus-4-7";
+const RECONCILIATION_AGENT_ID = Deno.env.get("RECONCILIATION_AGENT_ID");
+const RECONCILIATION_ENVIRONMENT_ID = Deno.env.get("RECONCILIATION_ENVIRONMENT_ID");
+const RECONCILIATION_MODEL = Deno.env.get("RECONCILIATION_MODEL") ?? "claude-opus-4-7";
 const SEVERE_WEATHER_REPORTING_SKILL_ID = Deno.env.get("SEVERE_WEATHER_REPORTING_SKILL_ID");
 const SEVERE_WEATHER_REPORTING_SKILL_VERSION = Deno.env.get("SEVERE_WEATHER_REPORTING_SKILL_VERSION");
 
-if (!ANTHROPIC_API_KEY || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !CLASSIFIER_AGENT_ID || !CLASSIFIER_ENVIRONMENT_ID) {
-  console.error("[classify] missing required env: ANTHROPIC_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, CLASSIFIER_AGENT_ID, CLASSIFIER_ENVIRONMENT_ID");
+if (!ANTHROPIC_API_KEY || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !RECONCILIATION_AGENT_ID || !RECONCILIATION_ENVIRONMENT_ID) {
+  console.error("[reconcile] missing required env: ANTHROPIC_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, RECONCILIATION_AGENT_ID, RECONCILIATION_ENVIRONMENT_ID");
 }
 
 const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!, {
@@ -33,35 +34,55 @@ Deno.serve(async (req) => {
     return await handle(req);
   } catch (err) {
     const message = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
-    console.error("[classify] unhandled", message, err);
+    console.error("[reconcile] unhandled", message, err);
     return jsonResponse({ error: message }, 500);
   }
 });
 
 async function handle(req: Request): Promise<Response> {
-  let report_id: string | undefined;
+  let classification_id: string | undefined;
   try {
     const body = await req.json();
-    report_id = body.report_id;
+    classification_id = body.classification_id;
   } catch {
     return jsonResponse({ error: "invalid JSON body" }, 400);
   }
-  if (!report_id) return jsonResponse({ error: "report_id required" }, 400);
+  if (!classification_id) return jsonResponse({ error: "classification_id required" }, 400);
+
+  const { data: classification, error: clsErr } = await supabase
+    .from("classifications")
+    .select("id, report_id, phenomenon, features, hail_size_cm, confidence")
+    .eq("id", classification_id)
+    .single();
+  if (clsErr) return jsonResponse({ error: `classification lookup: ${clsErr.message}` }, 404);
 
   const { data: report, error: reportErr } = await supabase
-    .from("reports")
-    .select("id, photo_url")
-    .eq("id", report_id)
+    .from("reports_v")
+    .select("id, photo_url, lat, lon, heading_degrees, captured_at")
+    .eq("id", classification.report_id)
     .single();
   if (reportErr) return jsonResponse({ error: `report lookup: ${reportErr.message}` }, 404);
   if (!report?.photo_url) return jsonResponse({ error: "report has no photo_url" }, 422);
 
-  const session = await anthropic.beta.sessions.create({
-    agent: CLASSIFIER_AGENT_ID!,
-    environment_id: CLASSIFIER_ENVIRONMENT_ID!,
-    title: `classify ${report_id.slice(0, 8)}`,
+  const radar = radolanFrameForReport({
+    lon: report.lon,
+    lat: report.lat,
+    captured_at: report.captured_at,
   });
-  console.log(`[classify] session ${session.id} for report ${report_id}`);
+
+  const classifierRecord = {
+    phenomenon: classification.phenomenon,
+    features: classification.features,
+    hail_size_cm: classification.hail_size_cm,
+    confidence: classification.confidence,
+  };
+
+  const session = await anthropic.beta.sessions.create({
+    agent: RECONCILIATION_AGENT_ID!,
+    environment_id: RECONCILIATION_ENVIRONMENT_ID!,
+    title: `reconcile ${classification_id.slice(0, 8)}`,
+  });
+  console.log(`[reconcile] session ${session.id} for classification ${classification_id}`);
 
   const stream = await anthropic.beta.sessions.events.stream(session.id);
   await anthropic.beta.sessions.events.send(session.id, {
@@ -70,7 +91,22 @@ async function handle(req: Request): Promise<Response> {
         type: "user.message",
         content: [
           { type: "image", source: { type: "url", url: report.photo_url } },
-          { type: "text", text: "Classify this sky photo per the output contract." },
+          { type: "image", source: { type: "url", url: radar.url } },
+          {
+            type: "text",
+            text: `Community photo (image 1) and DWD RADOLAN frame (image 2) for the same report.
+
+Report metadata:
+- location: ${report.lat.toFixed(4)}, ${report.lon.toFixed(4)}
+- heading: ${Math.round(report.heading_degrees)}°
+- captured_at: ${report.captured_at}
+- radar frame time: ${radar.frame_time_iso}
+
+Classifier record:
+${JSON.stringify(classifierRecord, null, 2)}
+
+Reconcile per the output contract.`,
+          },
         ],
       },
     ],
@@ -88,7 +124,7 @@ async function handle(req: Request): Promise<Response> {
       eventCount++;
       if (Date.now() > deadline || eventCount > MAX_EVENTS) {
         timedOut = true;
-        console.warn(`[classify] aborting session ${session.id} — events=${eventCount} elapsed=${Date.now() - (deadline - DEADLINE_MS)}ms`);
+        console.warn(`[reconcile] aborting session ${session.id} — events=${eventCount}`);
         break;
       }
       if (event.type === "agent.message") {
@@ -103,7 +139,8 @@ async function handle(req: Request): Promise<Response> {
       }
     }
   } finally {
-    anthropic.beta.sessions.archive(session.id).catch((e) => console.warn(`[classify] archive failed ${session.id}:`, e?.message));
+    // Best-effort final-stats pull so session_stats carries cost receipts.
+    anthropic.beta.sessions.archive(session.id).catch((e) => console.warn(`[reconcile] archive failed ${session.id}:`, e?.message));
   }
 
   let finalUsage: Record<string, unknown> | null = null;
@@ -115,15 +152,15 @@ async function handle(req: Request): Promise<Response> {
     // deno-lint-ignore no-explicit-any
     finalStats = (retrieved as any)?.stats ?? null;
   } catch (e) {
-    console.warn(`[classify] retrieve-for-usage failed ${session.id}:`, (e as Error)?.message);
+    console.warn(`[reconcile] retrieve-for-usage failed ${session.id}:`, (e as Error)?.message);
   }
 
   const sessionStats = buildSessionStats({
     session_id: session.id,
-    agent_id: CLASSIFIER_AGENT_ID!,
+    agent_id: RECONCILIATION_AGENT_ID!,
     skill_id: SEVERE_WEATHER_REPORTING_SKILL_ID,
     skill_version: SEVERE_WEATHER_REPORTING_SKILL_VERSION,
-    model: CLASSIFIER_MODEL,
+    model: RECONCILIATION_MODEL,
     // deno-lint-ignore no-explicit-any
     usage: finalUsage as any,
     // deno-lint-ignore no-explicit-any
@@ -131,7 +168,7 @@ async function handle(req: Request): Promise<Response> {
   });
 
   if (timedOut) {
-    return jsonResponse({ error: "classifier timed out", session_id: session.id, events: eventCount }, 504);
+    return jsonResponse({ error: "reconciliation timed out", session_id: session.id, events: eventCount }, 504);
   }
 
   const parsed = extractJson(transcript);
@@ -139,22 +176,29 @@ async function handle(req: Request): Promise<Response> {
     return jsonResponse({ error: "agent did not return parseable JSON", transcript }, 502);
   }
 
-  const { data: classification, error: classErr } = await supabase
-    .from("classifications")
+  const verdict = ["match", "mismatch", "inconclusive"].includes(parsed.verdict as string)
+    ? (parsed.verdict as string)
+    : "inconclusive";
+  const confidence = ["low", "medium", "high"].includes(parsed.confidence as string)
+    ? (parsed.confidence as string)
+    : null;
+
+  const { data: verified, error: vrErr } = await supabase
+    .from("verified_reports")
     .insert({
-      report_id,
-      agent: "classifier",
-      phenomenon: typeof parsed.phenomenon === "string" ? parsed.phenomenon : null,
-      features: Array.isArray(parsed.features) ? parsed.features : null,
-      hail_size_cm: typeof parsed.hail_size_cm === "number" ? parsed.hail_size_cm : null,
-      confidence: ["low", "medium", "high"].includes(parsed.confidence) ? parsed.confidence : null,
+      report_id: classification.report_id,
+      classification_id: classification.id,
+      radar_frame_url: radar.url,
+      verdict,
+      rationale: typeof parsed.rationale === "string" ? parsed.rationale : null,
+      confidence,
       session_stats: sessionStats,
     })
-    .select("id, phenomenon, features, confidence, hail_size_cm, session_stats")
+    .select("id, verdict, rationale, confidence, radar_frame_url, created_at")
     .single();
-  if (classErr) return jsonResponse({ error: `classifications insert: ${classErr.message}` }, 500);
+  if (vrErr) return jsonResponse({ error: `verified_reports insert: ${vrErr.message}` }, 500);
 
-  return jsonResponse({ classification, session_id: session.id });
+  return jsonResponse({ verified_report: verified, session_id: session.id });
 }
 
 function jsonResponse(body: unknown, status = 200): Response {

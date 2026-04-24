@@ -2,16 +2,22 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import MapView from "../components/MapView";
-import type { Classification, Confidence, Report } from "../lib/types";
+import type { Classification, Confidence, Report, SessionStats, VerifiedReport } from "../lib/types";
 
 const POLL_INTERVAL_MS = 2500;
-const POLL_TIMEOUT_MS = 60_000;
+const POLL_TIMEOUT_MS = 90_000;
+
+const DEV_DEBUG =
+  import.meta.env.DEV ||
+  (typeof window !== "undefined" && new URLSearchParams(window.location.search).has("debug"));
 
 export default function ReportDetail() {
   const { id } = useParams<{ id: string }>();
   const [report, setReport] = useState<Report | null>(null);
   const [classification, setClassification] = useState<Classification | null>(null);
   const [classifyError, setClassifyError] = useState<string | null>(null);
+  const [verified, setVerified] = useState<VerifiedReport | null>(null);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -46,7 +52,7 @@ export default function ReportDetail() {
         return;
       }
       if (Date.now() - startedAt > POLL_TIMEOUT_MS) {
-        setClassifyError("Classifier did not respond within 60s. Try again from the map.");
+        setClassifyError("Classifier did not respond within 90s. Try again from the map.");
         return;
       }
       setTimeout(poll, POLL_INTERVAL_MS);
@@ -56,6 +62,40 @@ export default function ReportDetail() {
       cancelled = true;
     };
   }, [id]);
+
+  useEffect(() => {
+    if (!classification) return;
+    let cancelled = false;
+    const startedAt = Date.now();
+
+    supabase.functions
+      .invoke("reconcile", { body: { classification_id: classification.id } })
+      .catch((e) => console.warn("[reconcile] invoke failed", e));
+
+    async function poll() {
+      const { data } = await supabase
+        .from("verified_reports")
+        .select("*")
+        .eq("classification_id", classification!.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (cancelled) return;
+      if (data) {
+        setVerified(data as VerifiedReport);
+        return;
+      }
+      if (Date.now() - startedAt > POLL_TIMEOUT_MS) {
+        setVerifyError("Reconciliation did not respond within 90s.");
+        return;
+      }
+      setTimeout(poll, POLL_INTERVAL_MS);
+    }
+    poll();
+    return () => {
+      cancelled = true;
+    };
+  }, [classification]);
 
   if (error) {
     return (
@@ -91,10 +131,8 @@ export default function ReportDetail() {
             />
           </section>
         )}
-        <ClassificationCard
-          classification={classification}
-          error={classifyError}
-        />
+        <ClassificationCard classification={classification} error={classifyError} />
+        <VerifiedCard verified={verified} error={verifyError} hasClassification={!!classification} />
         <section>
           <p className="text-white/50">Heading</p>
           <p className="text-xl font-semibold tabular-nums">{Math.round(report.heading_degrees)}°</p>
@@ -164,6 +202,58 @@ function ClassificationCard({
           ))}
         </ul>
       )}
+      <CostFooter stats={classification.session_stats} label="Classifier" />
+    </section>
+  );
+}
+
+function VerifiedCard({
+  verified,
+  error,
+  hasClassification,
+}: {
+  verified: VerifiedReport | null;
+  error: string | null;
+  hasClassification: boolean;
+}) {
+  if (!hasClassification) return null;
+  if (error) {
+    return (
+      <section className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-xs text-red-200">
+        {error}
+      </section>
+    );
+  }
+  if (!verified) {
+    return (
+      <section className="rounded-lg border border-white/10 bg-white/5 p-4 text-xs text-white/50">
+        <span className="inline-flex items-center gap-2">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-sky-400" />
+          Reconciling against DWD RADOLAN…
+        </span>
+      </section>
+    );
+  }
+  return (
+    <section className="rounded-lg border border-white/10 bg-white/5 p-4 text-sm">
+      <div className="flex items-center justify-between">
+        <p className="text-white/50 text-xs uppercase tracking-wider">Reconciliation</p>
+        <VerdictPill verdict={verified.verdict} />
+      </div>
+      {verified.rationale && (
+        <p className="mt-2 text-sm leading-relaxed text-white/80">{verified.rationale}</p>
+      )}
+      {verified.radar_frame_url && (
+        <a
+          href={verified.radar_frame_url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-3 inline-block text-[11px] text-white/40 underline underline-offset-2"
+        >
+          View radar frame
+        </a>
+      )}
+      <CostFooter stats={verified.session_stats} label="Reconciliation" />
     </section>
   );
 }
@@ -180,6 +270,30 @@ function ConfidencePill({ value }: { value: Confidence | null }) {
     <span className={`rounded-full border px-2.5 py-0.5 text-[10px] uppercase tracking-wider ${tone[v]}`}>
       {v} confidence
     </span>
+  );
+}
+
+function VerdictPill({ verdict }: { verdict: VerifiedReport["verdict"] }) {
+  const tone: Record<VerifiedReport["verdict"], string> = {
+    match: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+    mismatch: "bg-red-500/15 text-red-300 border-red-500/30",
+    inconclusive: "bg-white/5 text-white/50 border-white/10",
+  };
+  return (
+    <span className={`rounded-full border px-2.5 py-0.5 text-[10px] uppercase tracking-wider ${tone[verdict]}`}>
+      {verdict}
+    </span>
+  );
+}
+
+function CostFooter({ stats, label }: { stats: SessionStats | null; label: string }) {
+  if (!DEV_DEBUG || !stats) return null;
+  const cost = stats.cost_usd != null ? `$${stats.cost_usd.toFixed(4)}` : "—";
+  const duration = stats.duration_ms != null ? `${(stats.duration_ms / 1000).toFixed(1)}s` : "—";
+  return (
+    <p className="mt-3 border-t border-white/5 pt-2 font-mono text-[10px] text-white/30">
+      {label} · {stats.model} · {cost} · {duration} · {stats.session_id.slice(0, 12)}…
+    </p>
   );
 }
 
