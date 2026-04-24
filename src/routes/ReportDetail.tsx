@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import MapView from "../components/MapView";
@@ -6,7 +6,12 @@ import type { Classification, Confidence, Report, SessionStats, VerifiedReport }
 import { inviteHeaders } from "../lib/invite";
 
 const POLL_INTERVAL_MS = 2500;
-const POLL_TIMEOUT_MS = 90_000;
+const CLASSIFY_POLL_TIMEOUT_MS = 90_000;
+const RECONCILE_POLL_TIMEOUT_MS = 180_000;
+
+// Module-scoped: survives component remount within the same browser session,
+// keyed by classification id. Server-side idempotency is the durable guard.
+const reconcileDispatchSet = new Set<string>();
 
 const DEV_DEBUG =
   import.meta.env.DEV ||
@@ -53,7 +58,7 @@ export default function ReportDetail() {
         setClassification(data as Classification);
         return;
       }
-      if (Date.now() - startedAt > POLL_TIMEOUT_MS) {
+      if (Date.now() - startedAt > CLASSIFY_POLL_TIMEOUT_MS) {
         setClassifyError("Classifier did not respond within 90s. Try again from the map.");
         return;
       }
@@ -65,26 +70,70 @@ export default function ReportDetail() {
     };
   }, [id]);
 
+  // Module-scoped guard so a remount (iOS bfcache eviction, back-nav, tab
+  // restore) does not re-fire reconcile for a classification we already
+  // dispatched in this browser session. Server-side idempotency is the
+  // durable guard; this prevents the visible "spinner restarts" UX bug.
+  const dispatchedReconcileFor = useRef<Set<string>>(reconcileDispatchSet);
+
   useEffect(() => {
     if (!classification) return;
     let cancelled = false;
     const startedAt = Date.now();
+    const cid = classification.id;
 
-    supabase.functions
-      .invoke("reconcile", {
-        body: { classification_id: classification.id },
-        headers: inviteHeaders(),
-      })
-      .catch((e) => {
-        console.warn("[reconcile] invoke failed", e);
-        if (!cancelled) setVerifyError(`Reconciliation could not start: ${e?.message ?? e}`);
-      });
+    // Reconcile only matters for in-taxonomy phenomena. out_of_scope and
+    // tester_selfie default to inconclusive per the system prompt, so opening
+    // a paid session for them is wasted cost. Surface a clean inconclusive
+    // verdict locally instead.
+    const skipPhenomena = new Set(["out_of_scope", "tester_selfie"]);
+    if (classification.phenomenon && skipPhenomena.has(classification.phenomenon)) {
+      setVerified({
+        id: "local",
+        verdict: "inconclusive",
+        rationale: "This image is outside the severe-weather reporting scope, so the radar comparison does not apply.",
+        confidence: "low",
+        radar_frame_url: null,
+        session_stats: null,
+        created_at: new Date().toISOString(),
+      } as unknown as VerifiedReport);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    if (!dispatchedReconcileFor.current.has(cid)) {
+      dispatchedReconcileFor.current.add(cid);
+      supabase.functions
+        .invoke("reconcile", {
+          body: { classification_id: cid },
+          headers: inviteHeaders(),
+        })
+        .then(({ data, error }) => {
+          if (cancelled) return;
+          // FunctionsFetchError ("Failed to send a request…") is expected on
+          // iOS PWA for long-running calls — Safari kills the fetch around
+          // 60–90s. Polling picks up the server-written verdict regardless,
+          // so we only surface real HTTP errors (401 invite, 4xx schema).
+          if (error && error.name !== "FunctionsFetchError") {
+            setVerifyError(`Reconciliation could not start: ${error.message}`);
+            return;
+          }
+          // deno-lint-ignore no-explicit-any
+          const payload = data as { verified_report?: VerifiedReport; timed_out?: boolean } | null;
+          if (payload?.verified_report) setVerified(payload.verified_report);
+        })
+        .catch((e) => {
+          if (!cancelled) console.warn("[reconcile] invoke fetch failed (polling continues)", e);
+        });
+    }
 
     async function poll() {
+      if (cancelled) return;
       const { data } = await supabase
         .from("verified_reports")
         .select("*")
-        .eq("classification_id", classification!.id)
+        .eq("classification_id", cid)
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -93,8 +142,8 @@ export default function ReportDetail() {
         setVerified(data as VerifiedReport);
         return;
       }
-      if (Date.now() - startedAt > POLL_TIMEOUT_MS) {
-        setVerifyError("Reconciliation did not respond within 90s.");
+      if (Date.now() - startedAt > RECONCILE_POLL_TIMEOUT_MS) {
+        setVerifyError("Reconciliation did not respond within 3 minutes.");
         return;
       }
       setTimeout(poll, POLL_INTERVAL_MS);
@@ -125,7 +174,14 @@ export default function ReportDetail() {
         className="flex items-center justify-between px-4 py-3"
         style={{ paddingTop: "calc(0.75rem + env(safe-area-inset-top))" }}
       >
-        <Link to="/" className="text-sm text-white/60">← Map</Link>
+        <Link
+          to="/"
+          className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5 text-sm text-white/90 active:scale-95"
+          aria-label="Home"
+        >
+          <span aria-hidden>🏠</span>
+          <span>Home</span>
+        </Link>
         <span className="text-xs uppercase tracking-wider text-white/40">Report</span>
       </header>
       <div className="aspect-[16/9] w-full sm:aspect-[2/1]">

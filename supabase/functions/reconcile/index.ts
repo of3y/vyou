@@ -85,6 +85,25 @@ async function handle(req: Request): Promise<Response> {
     captured_at: report.captured_at,
   });
 
+  // Anthropic's URL-image fetcher respects robots.txt, and DWD's maps.dwd.de
+  // disallows /geoserver/. Fetch the PNG server-side and pass it inline as
+  // base64. Edge functions are service operators of DWD's open-data API, not
+  // crawlers, so this is the right shape regardless of the robots.txt issue.
+  let radarImageBase64: string | null = null;
+  try {
+    const radarRes = await fetch(radar.url);
+    if (radarRes.ok) {
+      const buf = new Uint8Array(await radarRes.arrayBuffer());
+      let bin = "";
+      for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i]);
+      radarImageBase64 = btoa(bin);
+    } else {
+      console.warn(`[reconcile] radar fetch ${radarRes.status}: ${radar.url}`);
+    }
+  } catch (e) {
+    console.warn(`[reconcile] radar fetch failed: ${(e as Error).message}`);
+  }
+
   const classifierRecord = {
     phenomenon: classification.phenomenon,
     features: classification.features,
@@ -100,16 +119,19 @@ async function handle(req: Request): Promise<Response> {
   console.log(`[reconcile] session ${session.id} for classification ${classification_id}`);
 
   const stream = await anthropic.beta.sessions.events.stream(session.id);
-  await anthropic.beta.sessions.events.send(session.id, {
-    events: [
-      {
-        type: "user.message",
-        content: [
-          { type: "image", source: { type: "url", url: report.photo_url } },
-          { type: "image", source: { type: "url", url: radar.url } },
-          {
-            type: "text",
-            text: `Community photo (image 1) and DWD RADOLAN frame (image 2) for the same report.
+  // deno-lint-ignore no-explicit-any
+  const userContent: any[] = [
+    { type: "image", source: { type: "url", url: report.photo_url } },
+  ];
+  if (radarImageBase64) {
+    userContent.push({
+      type: "image",
+      source: { type: "base64", media_type: "image/png", data: radarImageBase64 },
+    });
+  }
+  userContent.push({
+    type: "text",
+    text: `Community photo (image 1) ${radarImageBase64 ? "and DWD RADOLAN frame (image 2) " : ""}for the same report.${radarImageBase64 ? "" : "\n\nNote: the DWD radar frame could not be fetched server-side; reconcile based on the classifier record alone, defaulting to inconclusive when radar evidence is required."}
 
 Report metadata:
 - location: ${report.lat.toFixed(4)}, ${report.lon.toFixed(4)}
@@ -121,15 +143,18 @@ Classifier record:
 ${JSON.stringify(classifierRecord, null, 2)}
 
 Reconcile per the output contract.`,
-          },
-        ],
-      },
-    ],
+  });
+
+  await anthropic.beta.sessions.events.send(session.id, {
+    events: [{ type: "user.message", content: userContent }],
   });
 
   let transcript = "";
   let stopReason: string | undefined;
-  const DEADLINE_MS = 90_000;
+  // Reconcile sends two images (photo + radar WMS frame) so cold sessions
+  // genuinely run longer than the single-image classifier. 150s gives the
+  // model headroom; the client polls 180s to absorb DB write latency.
+  const DEADLINE_MS = 150_000;
   const MAX_EVENTS = 200;
   const startedAt = Date.now();
   const deadline = startedAt + DEADLINE_MS;
