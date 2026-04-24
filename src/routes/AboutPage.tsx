@@ -2,7 +2,13 @@ import { Link } from "react-router-dom";
 
 export default function AboutPage() {
   return (
-    <div className="mx-auto flex min-h-dvh max-w-xl flex-col gap-6 p-8">
+    <div
+      className="mx-auto flex min-h-dvh max-w-xl flex-col gap-6 p-8"
+      style={{
+        paddingTop: "calc(2rem + env(safe-area-inset-top))",
+        paddingBottom: "calc(2rem + env(safe-area-inset-bottom))",
+      }}
+    >
       <h1 className="text-3xl font-semibold">VYou</h1>
       <p className="text-white/70">
         A community-fed situational weather map. A sky photo becomes a directional, AI-verified weather report on a shared map.

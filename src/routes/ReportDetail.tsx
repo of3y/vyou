@@ -113,7 +113,10 @@ export default function ReportDetail() {
 
   return (
     <div className="flex h-dvh flex-col bg-black text-white">
-      <header className="flex items-center justify-between px-4 py-3">
+      <header
+        className="flex items-center justify-between px-4 py-3"
+        style={{ paddingTop: "calc(0.75rem + env(safe-area-inset-top))" }}
+      >
         <Link to="/" className="text-sm text-white/60">← Map</Link>
         <span className="text-xs uppercase tracking-wider text-white/40">Report</span>
       </header>
