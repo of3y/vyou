@@ -43,6 +43,6 @@ Populated according to the rubrics in the attached skill. `hail_size_cm` is non-
 
 ## Status
 
-Live on `agent_011CaNFPcVYNTDMcAbNJX2oa` (initial provisioning 2026-04-24 morning), re-provisioned with the `severe-weather-reporting` skill attached as of the CMA-alignment slate (see [decision-log.md](../../docs/decision-log.md) 2026-04-24). First end-to-end smoke against an indoor-plant submission returned `out_of_scope` / `high` confidence with feature `indoor scene with houseplant and laptop` — the out-of-scope path works.
+Live on `agent_011CaNU2zpPjfdSrRfAooewJ` (v1, 2026-04-24 midday re-provisioning) with `skill_012Ab9cKxYUuXKLPr1SsiHR9@1777027793564790` (severe-weather-reporting) attached at `agents.create()`. Environment `env_01TQ91NRPF3STsJsqjid7jBR`. Prior agent `agent_011CaNFPcVYNTDMcAbNJX2oa` (no skill attached) stays live until archived. See [decision-log.md](../../docs/decision-log.md) 2026-04-24. First end-to-end smoke against an indoor-plant submission returned `out_of_scope` / `high` confidence with feature `indoor scene with houseplant and laptop` — the out-of-scope path works.
 
 Open item: hail-size calibration against a corpus of scale-referenced frames. Drops into the validation sanity run under `eval/` once the corpus has enough hail samples labeled.
