@@ -26,6 +26,7 @@ export default function ReportDetail() {
   const [classifyError, setClassifyError] = useState<string | null>(null);
   const [verified, setVerified] = useState<VerifiedReport | null>(null);
   const [verifyError, setVerifyError] = useState<string | null>(null);
+  const [verifyRequested, setVerifyRequested] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [enlarged, setEnlarged] = useState(false);
 
@@ -104,16 +105,15 @@ export default function ReportDetail() {
   // durable guard; this prevents the visible "spinner restarts" UX bug.
   const dispatchedReconcileFor = useRef<Set<string>>(reconcileDispatchSet);
 
+  // On classification change: one-shot check for an existing verified_report.
+  // If present, render it. Never auto-invoke — the Verify button below is the
+  // only trigger for a paid reconcile session. Visiting a report (old or new)
+  // costs zero until the visitor taps the button.
   useEffect(() => {
     if (!classification) return;
     let cancelled = false;
-    const startedAt = Date.now();
     const cid = classification.id;
 
-    // Reconcile only matters for in-taxonomy phenomena. out_of_scope and
-    // tester_selfie default to inconclusive per the system prompt, so opening
-    // a paid session for them is wasted cost. Surface a clean inconclusive
-    // verdict locally instead.
     const skipPhenomena = new Set(["out_of_scope", "tester_selfie"]);
     if (classification.phenomenon && skipPhenomena.has(classification.phenomenon)) {
       setVerified({
@@ -130,6 +130,32 @@ export default function ReportDetail() {
       };
     }
 
+    (async () => {
+      const { data } = await supabase
+        .from("verified_reports")
+        .select("*")
+        .eq("classification_id", cid)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (cancelled) return;
+      if (data) setVerified(data as VerifiedReport);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [classification]);
+
+  // Polling loop runs only after the visitor explicitly taps Verify. It
+  // invokes the edge function and then polls verified_reports until the
+  // server writes a row.
+  useEffect(() => {
+    if (!verifyRequested || !classification) return;
+    let cancelled = false;
+    const startedAt = Date.now();
+    const cid = classification.id;
+
     if (!dispatchedReconcileFor.current.has(cid)) {
       dispatchedReconcileFor.current.add(cid);
       supabase.functions
@@ -139,15 +165,10 @@ export default function ReportDetail() {
         })
         .then(({ data, error }) => {
           if (cancelled) return;
-          // FunctionsFetchError ("Failed to send a request…") is expected on
-          // iOS PWA for long-running calls — Safari kills the fetch around
-          // 60–90s. Polling picks up the server-written verdict regardless,
-          // so we only surface real HTTP errors (401 invite, 4xx schema).
           if (error && error.name !== "FunctionsFetchError") {
             setVerifyError(`Reconciliation could not start: ${error.message}`);
             return;
           }
-          // deno-lint-ignore no-explicit-any
           const payload = data as { verified_report?: VerifiedReport; timed_out?: boolean } | null;
           if (payload?.verified_report) setVerified(payload.verified_report);
         })
@@ -180,7 +201,12 @@ export default function ReportDetail() {
     return () => {
       cancelled = true;
     };
-  }, [classification]);
+  }, [verifyRequested, classification]);
+
+  function startVerification() {
+    setVerifyError(null);
+    setVerifyRequested(true);
+  }
 
   if (error) {
     return (
@@ -237,7 +263,13 @@ export default function ReportDetail() {
           </section>
         )}
         <ClassificationCard classification={classification} error={classifyError} onRetry={retryClassify} />
-        <VerifiedCard verified={verified} error={verifyError} hasClassification={!!classification} />
+        <VerifiedCard
+          verified={verified}
+          error={verifyError}
+          hasClassification={!!classification}
+          requested={verifyRequested}
+          onVerify={startVerification}
+        />
         <section>
           <p className="text-white/50">Heading</p>
           <p className="text-xl font-semibold tabular-nums">{Math.round(report.heading_degrees)}°</p>
@@ -345,16 +377,46 @@ function VerifiedCard({
   verified,
   error,
   hasClassification,
+  requested,
+  onVerify,
 }: {
   verified: VerifiedReport | null;
   error: string | null;
   hasClassification: boolean;
+  requested: boolean;
+  onVerify: () => void;
 }) {
   if (!hasClassification) return null;
   if (error) {
     return (
-      <section className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-xs text-red-200">
-        {error}
+      <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-xs text-red-200">
+        <span>{error}</span>
+        <button
+          type="button"
+          onClick={onVerify}
+          className="rounded-full bg-red-500/20 px-3 py-1 text-[11px] font-medium text-red-100 active:scale-95"
+        >
+          Retry
+        </button>
+      </section>
+    );
+  }
+  if (!verified && !requested) {
+    return (
+      <section className="flex flex-col gap-3 rounded-lg border border-white/10 bg-white/5 p-4 text-sm">
+        <div>
+          <p className="text-white/50 text-xs uppercase tracking-wider">Reconciliation</p>
+          <p className="mt-1 text-white/70">
+            Compare this photo against DWD radar to verify the classification. Opens a paid Opus 4.7 session.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onVerify}
+          className="self-start rounded-full bg-sky-500/20 px-4 py-2 text-xs font-medium text-sky-100 ring-1 ring-sky-500/30 active:scale-95"
+        >
+          Verify against radar
+        </button>
       </section>
     );
   }
