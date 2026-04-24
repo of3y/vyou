@@ -24,3 +24,9 @@ body,
     sans-serif;
   -webkit-font-smoothing: antialiased;
 }
+
+input,
+textarea,
+select {
+  font-size: 16px;
+}

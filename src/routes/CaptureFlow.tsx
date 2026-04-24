@@ -110,7 +110,10 @@ export default function CaptureFlow() {
 
   return (
     <div className="flex h-dvh flex-col bg-black text-white">
-      <header className="flex items-center justify-between px-4 py-3">
+      <header
+        className="flex items-center justify-between px-4 py-3"
+        style={{ paddingTop: "calc(0.75rem + env(safe-area-inset-top))" }}
+      >
         <Link to="/" className="text-sm text-white/60">
           ← Map
         </Link>
@@ -270,7 +273,8 @@ function CameraStep({
     <div className="relative h-full w-full bg-black">
       <video ref={videoRef} className="h-full w-full object-cover" playsInline muted />
       <div
-        className={`pointer-events-none absolute left-1/2 top-4 flex -translate-x-1/2 items-center gap-2 rounded-full px-4 py-1.5 text-xs backdrop-blur ${trustPillClasses(compassT)}`}
+        className={`pointer-events-none absolute left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full px-4 py-1.5 text-xs backdrop-blur ${trustPillClasses(compassT)}`}
+        style={{ top: "calc(1rem + env(safe-area-inset-top))" }}
       >
         <span className="opacity-60">Heading</span>
         <span className="tabular-nums text-base font-semibold">
@@ -281,7 +285,8 @@ function CameraStep({
       </div>
       <button
         onClick={() => setFacing((f) => (f === "environment" ? "user" : "environment"))}
-        className="absolute bottom-10 right-6 flex h-11 w-11 items-center justify-center rounded-full bg-black/60 text-white/90 backdrop-blur active:scale-90"
+        className="absolute right-6 flex h-11 w-11 items-center justify-center rounded-full bg-black/60 text-white/90 backdrop-blur active:scale-90"
+        style={{ bottom: "calc(2.5rem + env(safe-area-inset-bottom))" }}
         aria-label="Flip camera"
       >
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
@@ -294,7 +299,8 @@ function CameraStep({
       <button
         onClick={shoot}
         disabled={!ready}
-        className="absolute bottom-8 left-1/2 h-16 w-16 -translate-x-1/2 rounded-full border-4 border-white bg-white/20 active:scale-90 disabled:opacity-40"
+        className="absolute left-1/2 h-16 w-16 -translate-x-1/2 rounded-full border-4 border-white bg-white/20 active:scale-90 disabled:opacity-40"
+        style={{ bottom: "calc(2rem + env(safe-area-inset-bottom))" }}
         aria-label="Take photo"
       />
     </div>
@@ -325,7 +331,10 @@ function HeadingStep({
       <div className="h-1/3 w-full overflow-hidden bg-black">
         <img src={photoUrl} alt="Captured sky" className="h-full w-full object-cover" />
       </div>
-      <div className="flex flex-1 flex-col justify-between gap-6 p-6">
+      <div
+        className="flex flex-1 flex-col justify-between gap-6 p-6"
+        style={{ paddingBottom: "calc(1.5rem + env(safe-area-inset-bottom))" }}
+      >
         <div className="space-y-2 text-center">
           <p className="text-xs uppercase tracking-wider text-white/40">Facing direction</p>
           <p className="text-5xl font-semibold tabular-nums">{Math.round(heading)}°</p>
@@ -400,7 +409,10 @@ function SubmitStep({
           <span className="tabular-nums font-semibold">{Math.round(heading)}°</span>
         </div>
       </div>
-      <div className="flex flex-col gap-3 border-t border-white/10 p-4">
+      <div
+        className="flex flex-col gap-3 border-t border-white/10 p-4"
+        style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}
+      >
         <textarea
           value={caption}
           onChange={(e) => onCaption(e.target.value.slice(0, 280))}
