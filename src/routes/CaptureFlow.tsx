@@ -417,7 +417,7 @@ function SubmitStep({
           value={caption}
           onChange={(e) => onCaption(e.target.value.slice(0, 280))}
           rows={2}
-          className="rounded-lg border border-white/10 bg-white/5 p-3 text-sm"
+          className="rounded-lg border border-white/10 bg-white/5 p-3"
           placeholder="Caption (optional)"
         />
         <button
