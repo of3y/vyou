@@ -19,6 +19,13 @@ export default function MapPage() {
       >
         VYou
       </Link>
+      <Link
+        to="/reports"
+        className="absolute right-4 rounded-full bg-black/60 px-3 py-1 text-xs text-white/80"
+        style={{ top: "calc(1rem + env(safe-area-inset-top))" }}
+      >
+        Reports
+      </Link>
     </div>
   );
 }

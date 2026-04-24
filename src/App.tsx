@@ -4,6 +4,7 @@ import { Route, Routes } from "react-router-dom";
 import MapPage from "./routes/MapPage";
 import CaptureFlow from "./routes/CaptureFlow";
 import ReportDetail from "./routes/ReportDetail";
+import ReportsList from "./routes/ReportsList";
 import AboutPage from "./routes/AboutPage";
 import IOSInstallHint from "./components/IOSInstallHint";
 import InviteBanner from "./components/InviteBanner";
@@ -20,6 +21,7 @@ export default function App() {
         <Route path="/" element={<MapPage />} />
         <Route path="/capture" element={<CaptureFlow />} />
         <Route path="/report/:id" element={<ReportDetail />} />
+        <Route path="/reports" element={<ReportsList />} />
         <Route path="/about" element={<AboutPage />} />
       </Routes>
       <InviteBanner />
