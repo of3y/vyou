@@ -4,6 +4,10 @@ import toast from "react-hot-toast";
 import { supabase } from "../lib/supabase";
 import { getReporterId } from "../lib/reporter";
 import { inviteHeaders } from "../lib/invite";
+import {
+  absoluteAlphaFromCompassHeading,
+  cameraBearingFromDeviceOrientation,
+} from "../lib/heading";
 
 type Step = "permissions" | "camera" | "heading" | "submit";
 
@@ -36,23 +40,43 @@ export default function CaptureFlow() {
   useEffect(() => {
     if (step !== "camera" && step !== "heading") return;
     if (typeof DeviceOrientationEvent === "undefined") return;
-    const handler = (e: DeviceOrientationEvent) => {
+    let sawAbsolute = false;
+    const handler = (e: DeviceOrientationEvent, allowEventAlpha: boolean) => {
       const ios = e as DeviceOrientationEvent & {
         webkitCompassHeading?: number;
         webkitCompassAccuracy?: number;
       };
-      const value = typeof ios.webkitCompassHeading === "number"
-        ? ios.webkitCompassHeading
-        : typeof e.alpha === "number"
-        ? 360 - e.alpha
-        : null;
-      if (value !== null && !Number.isNaN(value)) setLiveHeading(value);
+      const beta = typeof e.beta === "number" && !Number.isNaN(e.beta) ? e.beta : 0;
+      const gamma = typeof e.gamma === "number" && !Number.isNaN(e.gamma) ? e.gamma : 0;
+      let alpha: number | null = null;
+      if (typeof ios.webkitCompassHeading === "number" && !Number.isNaN(ios.webkitCompassHeading)) {
+        alpha = absoluteAlphaFromCompassHeading(ios.webkitCompassHeading);
+      } else if (allowEventAlpha && typeof e.alpha === "number" && !Number.isNaN(e.alpha)) {
+        alpha = e.alpha;
+      }
+      if (alpha !== null) {
+        setLiveHeading(cameraBearingFromDeviceOrientation(alpha, beta, gamma));
+      }
       if (typeof ios.webkitCompassAccuracy === "number" && ios.webkitCompassAccuracy >= 0) {
         setCompassAccuracy(ios.webkitCompassAccuracy);
       }
     };
-    window.addEventListener("deviceorientation", handler, true);
-    return () => window.removeEventListener("deviceorientation", handler, true);
+    const absoluteHandler = (e: DeviceOrientationEvent) => {
+      sawAbsolute = true;
+      handler(e, true);
+    };
+    const relativeHandler = (e: DeviceOrientationEvent) => {
+      // On Android, prefer absolute when both fire. iOS never fires absolute,
+      // so relative is the only channel there (webkitCompassHeading absolutizes it).
+      if (sawAbsolute) return;
+      handler(e, e.absolute === true);
+    };
+    window.addEventListener("deviceorientationabsolute", absoluteHandler as EventListener, true);
+    window.addEventListener("deviceorientation", relativeHandler, true);
+    return () => {
+      window.removeEventListener("deviceorientationabsolute", absoluteHandler as EventListener, true);
+      window.removeEventListener("deviceorientation", relativeHandler, true);
+    };
   }, [step]);
 
   async function requestPermissions() {
@@ -288,39 +312,51 @@ function CameraStep({
   const compassT = compassTier(compassAccuracyDeg);
 
   return (
-    <div className="relative h-full w-full bg-black">
-      <video ref={videoRef} className="h-full w-full object-cover" playsInline muted />
-      <div
-        className={`pointer-events-none absolute left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full px-4 py-1.5 text-xs backdrop-blur ${trustPillClasses(compassT)}`}
-        style={{ top: "calc(1rem + env(safe-area-inset-top))" }}
-      >
-        <span className="opacity-60">Heading</span>
-        <span className="tabular-nums text-base font-semibold">
-          {liveHeading !== null ? `${Math.round(liveHeading)}°` : "—"}
-        </span>
-        <TrustDot tier={compassT} />
-        <span className="tabular-nums opacity-70">{compassLabel(compassAccuracyDeg)}</span>
+    <div className="flex h-full w-full flex-col bg-black">
+      <div className="relative min-h-0 flex-1 overflow-hidden bg-black">
+        <video
+          ref={videoRef}
+          className="absolute inset-0 h-full w-full object-cover"
+          playsInline
+          muted
+          autoPlay
+        />
+        <div
+          className={`pointer-events-none absolute left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full px-4 py-1.5 text-xs backdrop-blur ${trustPillClasses(compassT)}`}
+          style={{ top: "calc(1rem + env(safe-area-inset-top))" }}
+        >
+          <span className="opacity-60">Heading</span>
+          <span className="tabular-nums text-base font-semibold">
+            {liveHeading !== null ? `${Math.round(liveHeading)}°` : "—"}
+          </span>
+          <TrustDot tier={compassT} />
+          <span className="tabular-nums opacity-70">{compassLabel(compassAccuracyDeg)}</span>
+        </div>
       </div>
-      <button
-        onClick={() => setFacing((f) => (f === "environment" ? "user" : "environment"))}
-        className="absolute right-6 flex h-11 w-11 items-center justify-center rounded-full bg-black/60 text-white/90 backdrop-blur active:scale-90"
-        style={{ bottom: "calc(2.5rem + env(safe-area-inset-bottom))" }}
-        aria-label="Flip camera"
+      <div
+        className="relative flex shrink-0 items-center justify-between gap-4 bg-black px-6 pt-4"
+        style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}
       >
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
-          <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
-          <path d="M21 3v5h-5" />
-          <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
-          <path d="M3 21v-5h5" />
-        </svg>
-      </button>
-      <button
-        onClick={shoot}
-        disabled={!ready}
-        className="absolute left-1/2 h-16 w-16 -translate-x-1/2 rounded-full border-4 border-white bg-white/20 active:scale-90 disabled:opacity-40"
-        style={{ bottom: "calc(2rem + env(safe-area-inset-bottom))" }}
-        aria-label="Take photo"
-      />
+        <div className="h-11 w-11" aria-hidden />
+        <button
+          onClick={shoot}
+          disabled={!ready}
+          className="h-16 w-16 shrink-0 rounded-full border-4 border-white bg-white/20 active:scale-90 disabled:opacity-40"
+          aria-label="Take photo"
+        />
+        <button
+          onClick={() => setFacing((f) => (f === "environment" ? "user" : "environment"))}
+          className="flex h-11 w-11 items-center justify-center rounded-full bg-black/60 text-white/90 backdrop-blur active:scale-90"
+          aria-label="Flip camera"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+            <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+            <path d="M21 3v5h-5" />
+            <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
+            <path d="M3 21v-5h5" />
+          </svg>
+        </button>
+      </div>
     </div>
   );
 }
