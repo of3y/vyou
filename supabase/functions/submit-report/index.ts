@@ -10,6 +10,8 @@
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { requireInvite } from "../_shared/invite.ts";
+import { fetchOpenMeteo, mtgFrameForReport } from "../_shared/feeds.ts";
+import { radolanFrameForReport } from "../_shared/radolan.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -95,7 +97,84 @@ async function handle(req: Request): Promise<Response> {
     .single();
 
   if (error) return jsonResponse({ error: `insert: ${error.message}` }, 500);
+
+  // Hardened-plan v2 Fix A — capture weather-state references at submit
+  // time so the verified-report card and the post-Reconciliation brief
+  // have a stable, auditable snapshot even after the live radar rolls
+  // forward. Three of the four sources are URL-only computations (no
+  // network); only Open-Meteo actually fetches. We persist as a
+  // background task via EdgeRuntime.waitUntil so the response stays fast
+  // — context-write failures are non-fatal (reconcile can refetch).
+  const ctxTask = persistReportContext({
+    report_id: data.id,
+    lat: body.lat,
+    lon: body.lon,
+    captured_at: body.captured_at,
+  }).catch((e) => console.warn("[submit-report] context persist failed:", (e as Error)?.message));
+  edgeWaitUntil(ctxTask);
+
   return jsonResponse({ id: data.id });
+}
+
+declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void } | undefined;
+
+function edgeWaitUntil(p: Promise<unknown>): void {
+  // EdgeRuntime is a Deno-Deploy global on Supabase Edge Functions; in
+  // local-tests / non-edge contexts it's undefined and we just let the
+  // promise run to completion or get GC'd with the request.
+  if (typeof EdgeRuntime !== "undefined" && EdgeRuntime?.waitUntil) {
+    EdgeRuntime.waitUntil(p);
+  }
+}
+
+async function persistReportContext(args: {
+  report_id: string;
+  lat: number;
+  lon: number;
+  captured_at: string;
+}): Promise<void> {
+  const radar = radolanFrameForReport({ lon: args.lon, lat: args.lat, captured_at: args.captured_at });
+  const mtgIr = mtgFrameForReport({ lat: args.lat, lon: args.lon, captured_at: args.captured_at, layer: "mtg_fd:ir105_hrfi" });
+  const mtgLi = mtgFrameForReport({ lat: args.lat, lon: args.lon, captured_at: args.captured_at, layer: "mtg_fd:li_afa" });
+  const meteoSnap = await fetchOpenMeteo({ lat: args.lat, lon: args.lon, forecast_hours: 12 });
+
+  const rows = [
+    {
+      report_id: args.report_id,
+      source: "radolan",
+      frame_url: radar.url,
+      frame_time_iso: radar.frame_time_iso,
+      payload: { bbox_3857: radar.bbox_3857 },
+    },
+    {
+      report_id: args.report_id,
+      source: "mtg_ir",
+      frame_url: mtgIr.url,
+      frame_time_iso: mtgIr.time,
+      payload: null,
+    },
+    {
+      report_id: args.report_id,
+      source: "mtg_li",
+      frame_url: mtgLi.url,
+      frame_time_iso: mtgLi.time,
+      payload: null,
+    },
+    {
+      report_id: args.report_id,
+      source: "open_meteo",
+      frame_url: meteoSnap.url,
+      frame_time_iso: null,
+      payload: meteoSnap.ok
+        ? { current: meteoSnap.current, current_units: meteoSnap.current_units, hourly: meteoSnap.hourly, hourly_units: meteoSnap.hourly_units }
+        : { error: meteoSnap.error },
+    },
+  ];
+
+  const { error: ctxErr } = await supabase.from("report_context").insert(rows);
+  if (ctxErr) {
+    console.warn(`[submit-report] report_context insert failed: ${ctxErr.message}`);
+  }
 }
 
 function jsonResponse(body: unknown, status = 200) {
