@@ -141,6 +141,8 @@ export default function MapView({
   onConeClickRef.current = onConeClick;
   const onBackgroundClickRef = useRef(onBackgroundClick);
   onBackgroundClickRef.current = onBackgroundClick;
+  const activeReportIdRef = useRef<string | null | undefined>(activeReportId);
+  activeReportIdRef.current = activeReportId;
   const activeFidRef = useRef<string | number | null>(null);
   const setActiveRef = useRef<((fid: string | number | null) => void) | null>(null);
   const dimmedFidsRef = useRef<Set<string | number>>(new Set());
@@ -332,6 +334,11 @@ export default function MapView({
         const id = f?.properties?.id;
         const fid = f?.id;
         if (typeof id !== "string") return;
+        // Tapping the already-open cone dismisses the drawer instead of being a no-op.
+        if (id === activeReportIdRef.current) {
+          onBackgroundClickRef.current?.();
+          return;
+        }
         if (fid !== undefined) setActive(fid);
 
         // Stash the previous camera so closing the drawer restores the view.
