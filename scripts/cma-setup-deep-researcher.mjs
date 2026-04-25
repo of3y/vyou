@@ -49,6 +49,15 @@ const agent = await client.beta.agents.create({
     "VYou Deep Researcher — post-Reconciliation content-layer orchestrator that composes a cited evidence brief grounded in persisted pipeline artifacts and per-user + per-location Memory Box state.",
   system: SYSTEM_PROMPT,
   skills,
+  tools: [
+    {
+      type: "agent_toolset_20260401",
+      default_config: { enabled: false },
+      configs: [
+        { name: "read", enabled: true, permission_policy: { type: "always_allow" } },
+      ],
+    },
+  ],
 });
 console.log(`agent_id         ${agent.id}`);
 console.log(`agent_version    ${agent.version}`);
