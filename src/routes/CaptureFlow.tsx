@@ -1,16 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import toast from "react-hot-toast";
+import { notify } from "../lib/notify";
 import { supabase } from "../lib/supabase";
 import { submitReport } from "../lib/api";
 import { getReporterId } from "../lib/reporter";
 import { inviteHeaders } from "../lib/invite";
+import { trackClassification } from "../lib/pendingClassification";
 import {
   absoluteAlphaFromCompassHeading,
   cameraBearingFromDeviceOrientation,
 } from "../lib/heading";
 
-type Step = "permissions" | "camera" | "heading" | "submit";
+type Step = "permissions" | "camera" | "heading" | "submit" | "thanks";
 
 type Capture = {
   blob: Blob;
@@ -26,9 +27,11 @@ export default function CaptureFlow() {
   const [capture, setCapture] = useState<Capture | null>(null);
   const [heading, setHeading] = useState<number>(0);
   const [liveHeading, setLiveHeading] = useState<number | null>(null);
+  const [tilt, setTilt] = useState<{ beta: number; gamma: number } | null>(null);
   const [compassAccuracy, setCompassAccuracy] = useState<number | null>(null);
   const [caption, setCaption] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
+  const [submittedReportId, setSubmittedReportId] = useState<string | null>(null);
   const navigate = useNavigate();
 
   // Revoke the capture blob URL when it's replaced (retake) or the flow unmounts.
@@ -49,6 +52,7 @@ export default function CaptureFlow() {
       };
       const beta = typeof e.beta === "number" && !Number.isNaN(e.beta) ? e.beta : 0;
       const gamma = typeof e.gamma === "number" && !Number.isNaN(e.gamma) ? e.gamma : 0;
+      setTilt({ beta, gamma });
       let alpha: number | null = null;
       if (typeof ios.webkitCompassHeading === "number" && !Number.isNaN(ios.webkitCompassHeading)) {
         alpha = absoluteAlphaFromCompassHeading(ios.webkitCompassHeading);
@@ -88,7 +92,7 @@ export default function CaptureFlow() {
         if (typeof orientation === "function") {
           const result = await orientation();
           if (result !== "granted") {
-            toast("Orientation permission denied — manual heading only");
+            notify.message("Orientation permission denied — manual heading only");
           }
         }
       }
@@ -129,16 +133,18 @@ export default function CaptureFlow() {
       });
 
       if (error || !data) throw new Error(error ?? "submit failed");
-      toast.success("Report submitted");
       supabase.functions
         .invoke("classify", { body: { report_id: data.id }, headers: inviteHeaders() })
         .catch((e) => {
           console.warn("[VYou] classify invoke failed (will retry on report view)", e);
         });
-      navigate(`/report/${data.id}`);
+      trackClassification(data.id);
+      setSubmittedReportId(data.id);
+      setSubmitting(false);
+      setStep("thanks");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
-      toast.error(`Submit failed: ${message}`);
+      notify.error(`Submit failed: ${message}`);
       setSubmitting(false);
     }
   }
@@ -152,7 +158,9 @@ export default function CaptureFlow() {
         <Link to="/" className="text-sm text-white/60">
           ← Map
         </Link>
-        <span className="text-xs uppercase tracking-wider text-white/40">{step}</span>
+        <span className="text-xs uppercase tracking-wider text-white/40">
+          {step === "thanks" ? "submitted" : step}
+        </span>
       </header>
 
       <main className="flex-1 overflow-hidden">
@@ -160,6 +168,7 @@ export default function CaptureFlow() {
         {step === "camera" && (
           <CameraStep
             liveHeading={liveHeading}
+            tilt={tilt}
             compassAccuracyDeg={compassAccuracy}
             onCaptured={(c) => {
               setCapture(c);
@@ -193,7 +202,63 @@ export default function CaptureFlow() {
             submitting={submitting}
           />
         )}
+        {step === "thanks" && submittedReportId && (
+          <ThanksStep
+            photoUrl={capture?.blobUrl}
+            onBackToMap={() => navigate("/")}
+            onAsk={() => navigate(`/report/${submittedReportId}`)}
+          />
+        )}
       </main>
+    </div>
+  );
+}
+
+function ThanksStep({
+  photoUrl,
+  onBackToMap,
+  onAsk,
+}: {
+  photoUrl?: string;
+  onBackToMap: () => void;
+  onAsk: () => void;
+}) {
+  return (
+    <div className="flex h-full flex-col items-center justify-between gap-6 px-6 pt-6 pb-[calc(2rem+env(safe-area-inset-bottom))] text-center">
+      <div className="flex flex-1 flex-col items-center justify-center gap-5">
+        {photoUrl && (
+          <div className="relative h-36 w-36 overflow-hidden rounded-3xl ring-1 ring-white/10 shadow-[0_20px_50px_-20px_rgba(0,0,0,0.8)]">
+            <img src={photoUrl} alt="Submitted sky" className="h-full w-full object-cover" />
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+          </div>
+        )}
+        <div className="space-y-2">
+          <h1 className="text-[26px] font-semibold leading-tight tracking-tight">Thanks for the sky</h1>
+          <p className="mx-auto max-w-sm text-[14px] leading-relaxed text-white/60">
+            Your cone is on the map. Opus is reading it now —
+            we'll ping you the moment the classification lands.
+          </p>
+        </div>
+        <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[12px] text-white/65">
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+          Classifying in the background
+        </span>
+      </div>
+
+      <div className="flex w-full max-w-xs flex-col gap-3">
+        <button
+          onClick={onBackToMap}
+          className="rounded-full bg-white px-8 py-3 text-[14px] font-semibold text-black shadow-[0_10px_30px_-10px_rgba(255,255,255,0.4)] active:scale-[0.98]"
+        >
+          Back to map
+        </button>
+        <button
+          onClick={onAsk}
+          className="rounded-full border border-white/15 bg-white/[0.04] px-8 py-3 text-[14px] font-semibold text-white backdrop-blur active:scale-[0.98]"
+        >
+          Ask a question about this sky
+        </button>
+      </div>
     </div>
   );
 }
@@ -223,10 +288,12 @@ function PermissionsStep({ onGrant }: { onGrant: () => void }) {
 function CameraStep({
   onCaptured,
   liveHeading,
+  tilt,
   compassAccuracyDeg,
 }: {
   onCaptured: (c: Capture) => void;
   liveHeading: number | null;
+  tilt: { beta: number; gamma: number } | null;
   compassAccuracyDeg: number | null;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -307,7 +374,7 @@ function CameraStep({
     ctx.drawImage(video, 0, 0);
     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
     if (!blob) {
-      toast.error("Could not encode photo");
+      notify.error("Could not encode photo");
       return;
     }
     const blobUrl = URL.createObjectURL(blob);
@@ -325,7 +392,7 @@ function CameraStep({
       });
     } catch (err) {
       URL.revokeObjectURL(blobUrl);
-      toast.error(explainGeoError(err));
+      notify.error(explainGeoError(err));
     }
   }
 
@@ -340,6 +407,18 @@ function CameraStep({
 
   const compassT = compassTier(compassAccuracyDeg);
 
+  // Target pose: phone held upright in portrait (beta ≈ 90°, gamma ≈ 0°).
+  // Tolerance is per-axis so the globe can hint at *which* axis is off, not
+  // just that the phone is tilted. If the orientation sensor never fired
+  // (or permission was denied) we don't gate capture — heading-step manual
+  // entry still works.
+  const TILT_TOLERANCE = 10;
+  const pitchOff = tilt ? tilt.beta - 90 : 0;
+  const rollOff = tilt ? tilt.gamma : 0;
+  const tiltOK = !tilt || (Math.abs(pitchOff) < TILT_TOLERANCE && Math.abs(rollOff) < TILT_TOLERANCE);
+  const showRedEdge = !!tilt && !tiltOK;
+  const canShoot = ready && tiltOK && !isLandscape;
+
   return (
     <div className="flex h-full w-full flex-col bg-black">
       <div className="relative min-h-0 flex-1 overflow-hidden bg-black">
@@ -351,6 +430,14 @@ function CameraStep({
           autoPlay
         />
         <div
+          className="pointer-events-none absolute inset-0 transition-opacity duration-200"
+          style={{
+            boxShadow: "inset 0 0 50px 8px rgba(239, 68, 68, 0.28)",
+            opacity: showRedEdge ? 1 : 0,
+          }}
+          aria-hidden
+        />
+        <div
           className={`pointer-events-none absolute left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full px-4 py-1.5 text-xs backdrop-blur ${trustPillClasses(compassT)}`}
           style={{ top: "calc(1rem + env(safe-area-inset-top))" }}
         >
@@ -360,6 +447,12 @@ function CameraStep({
           </span>
           <TrustDot tier={compassT} />
           <span className="tabular-nums opacity-70">{compassLabel(compassAccuracyDeg)}</span>
+        </div>
+        <div
+          className="pointer-events-none absolute right-3"
+          style={{ top: "calc(3.5rem + env(safe-area-inset-top))" }}
+        >
+          <TiltGlobe pitchOff={pitchOff} rollOff={rollOff} tolerance={TILT_TOLERANCE} active={!!tilt} />
         </div>
         {isLandscape && !landscapeDismissed && (
           <div
@@ -395,7 +488,7 @@ function CameraStep({
         <div className="h-11 w-11" aria-hidden />
         <button
           onClick={shoot}
-          disabled={!ready}
+          disabled={!canShoot}
           className="h-16 w-16 shrink-0 rounded-full border-4 border-white bg-white/20 active:scale-90 disabled:opacity-40"
           aria-label="Take photo"
         />
@@ -412,6 +505,105 @@ function CameraStep({
           </svg>
         </button>
       </div>
+    </div>
+  );
+}
+
+function TiltGlobe({
+  pitchOff,
+  rollOff,
+  tolerance,
+  active,
+}: {
+  pitchOff: number;
+  rollOff: number;
+  tolerance: number;
+  active: boolean;
+}) {
+  const SIZE = 64;
+  const C = SIZE / 2;
+  const R = C - 8;
+
+  const ok = active && Math.abs(pitchOff) < tolerance && Math.abs(rollOff) < tolerance;
+  const upBad = active && pitchOff < -tolerance;
+  const downBad = active && pitchOff > tolerance;
+  const leftBad = active && rollOff < -tolerance;
+  const rightBad = active && rollOff > tolerance;
+
+  // Wireframe rotates with the device pose so the sphere reads as a real
+  // gyroscope: pitch tips the equator, roll spins the polar axis.
+  const VIS_CLAMP = tolerance * 2.2;
+  const cl = (v: number) => Math.max(-VIS_CLAMP, Math.min(VIS_CLAMP, v));
+  const tiltX = cl(pitchOff);
+  const tiltZ = cl(rollOff);
+
+  const stroke = ok
+    ? "rgba(110, 231, 183, 0.95)"
+    : active
+    ? "rgba(255, 255, 255, 0.85)"
+    : "rgba(255, 255, 255, 0.55)";
+  const strokeFaint = ok ? "rgba(110, 231, 183, 0.45)" : "rgba(255, 255, 255, 0.3)";
+  const arrowColor = (bad: boolean) =>
+    ok ? "rgba(110, 231, 183, 0.95)" : bad ? "rgba(248, 113, 113, 0.95)" : "rgba(255,255,255,0.3)";
+  const glow = ok
+    ? "drop-shadow(0 0 6px rgba(16,185,129,0.85)) drop-shadow(0 0 14px rgba(16,185,129,0.5))"
+    : "drop-shadow(0 1px 2px rgba(0,0,0,0.6))";
+
+  // Latitude rings: ellipses squashed by |cos(pitch)|, then the whole sphere
+  // rotated by roll. Negative y on the screen is "up", so positive pitch (top
+  // tipped away) lifts the equator visually.
+  const latRy = (offsetDeg: number) => {
+    const phi = (offsetDeg * Math.PI) / 180;
+    return Math.abs(Math.cos(phi));
+  };
+  const latCy = (offsetDeg: number) => {
+    const phi = ((offsetDeg + tiltX * 1.6) * Math.PI) / 180;
+    return Math.sin(phi);
+  };
+
+  return (
+    <div className="rounded-full p-[5px]" style={{ background: "rgba(0,0,0,0.35)", filter: glow }} aria-hidden>
+      <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`}>
+        <g transform={`rotate(${tiltZ} ${C} ${C})`} fill="none" strokeLinecap="round">
+          {/* outer sphere outline */}
+          <circle cx={C} cy={C} r={R} stroke={stroke} strokeWidth="1.1" />
+          {/* equator + two latitudes, perspective-flattened by pitch */}
+          {[0, -30, 30].map((lat) => (
+            <ellipse
+              key={lat}
+              cx={C}
+              cy={C + latCy(lat) * R * 0.55}
+              rx={R}
+              ry={R * latRy(lat + tiltX * 1.6)}
+              stroke={lat === 0 ? stroke : strokeFaint}
+              strokeWidth={lat === 0 ? 1 : 0.7}
+            />
+          ))}
+          {/* meridians: polar ellipse + a 60° rotated one */}
+          <ellipse cx={C} cy={C} rx={R * Math.abs(Math.sin((tiltX * 1.6 * Math.PI) / 180)) || 0.001} ry={R} stroke={strokeFaint} strokeWidth="0.7" />
+          <g transform={`rotate(60 ${C} ${C})`}>
+            <ellipse
+              cx={C}
+              cy={C}
+              rx={R * Math.abs(Math.sin(((tiltX * 1.6 + 60) * Math.PI) / 180)) || 0.001}
+              ry={R}
+              stroke={strokeFaint}
+              strokeWidth="0.7"
+            />
+          </g>
+          {/* polar axis line */}
+          <line x1={C} y1={C - R} x2={C} y2={C + R} stroke={stroke} strokeWidth="0.9" />
+          {/* level dot at the projected "north pole" of upright orientation */}
+          {active && ok && <circle cx={C} cy={C} r="1.6" fill="rgba(167,243,208,1)" />}
+        </g>
+        {/* fixed-frame chevrons sit outside the rotating sphere */}
+        <g fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.2">
+          <polyline points={`${C - 3},5 ${C},1.5 ${C + 3},5`} stroke={arrowColor(upBad)} />
+          <polyline points={`${C - 3},${SIZE - 5} ${C},${SIZE - 1.5} ${C + 3},${SIZE - 5}`} stroke={arrowColor(downBad)} />
+          <polyline points={`5,${C - 3} 1.5,${C} 5,${C + 3}`} stroke={arrowColor(leftBad)} />
+          <polyline points={`${SIZE - 5},${C - 3} ${SIZE - 1.5},${C} ${SIZE - 5},${C + 3}`} stroke={arrowColor(rightBad)} />
+        </g>
+      </svg>
     </div>
   );
 }
