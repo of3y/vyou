@@ -398,7 +398,7 @@ export default function ReportDetail() {
     const startedAt = Date.now();
     async function poll() {
       if (respondedSync) return;
-      const { data } = await getReport(id, reporterId);
+      const { data } = await getReport(id!, reporterId);
       const fresh = data?.brief;
       if (fresh && (!brief || fresh.id !== brief.id)) {
         setBrief(fresh);
