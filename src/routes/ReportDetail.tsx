@@ -18,6 +18,30 @@ const RESEARCH_POLL_TIMEOUT_MS = 60_000;
 const reconcileDispatchSet = new Set<string>();
 const classifyDispatchSet = new Set<string>();
 
+// Identity-stable setters for poll loops (Hardened-plan v2 §2 Fix B prereq).
+// The poll fetches the same row every 2.5s; without this, every tick swaps
+// the object identity and the React tree underneath thrashes — that was the
+// root of the 16:01 5-second reconcile-flicker bug. Keep the previous
+// reference when the row's id matches.
+function setClassificationStable(
+  setter: React.Dispatch<React.SetStateAction<Classification | null>>,
+  next: Classification,
+): void {
+  setter((prev) => (prev?.id === next.id ? prev : next));
+}
+function setVerifiedStable(
+  setter: React.Dispatch<React.SetStateAction<VerifiedReport | null>>,
+  next: VerifiedReport,
+): void {
+  setter((prev) => (prev?.id === next.id ? prev : next));
+}
+function setBriefStable(
+  setter: React.Dispatch<React.SetStateAction<Brief | null>>,
+  next: Brief,
+): void {
+  setter((prev) => (prev?.id === next.id ? prev : next));
+}
+
 const DEV_DEBUG =
   import.meta.env.DEV ||
   (typeof window !== "undefined" && new URLSearchParams(window.location.search).has("debug"));
@@ -66,7 +90,7 @@ export default function ReportDetail() {
       const { data } = await getReport(id!, getReporterId());
       if (cancelled) return;
       if (data?.classification) {
-        setClassification(data.classification);
+        setClassificationStable(setClassification, data.classification);
         return;
       }
       // On first poll pass, dispatch classify if no existing row and we
@@ -142,7 +166,7 @@ export default function ReportDetail() {
       const { data } = await getReport(report?.id ?? cid, getReporterId());
       if (cancelled) return;
       if (data?.verified && data.verified.classification_id === cid) {
-        setVerified(data.verified);
+        setVerifiedStable(setVerified, data.verified);
       }
     })();
 
@@ -198,7 +222,7 @@ export default function ReportDetail() {
             return;
           }
           const payload = data as { verified_report?: VerifiedReport; timed_out?: boolean } | null;
-          if (payload?.verified_report) setVerified(payload.verified_report);
+          if (payload?.verified_report) setVerifiedStable(setVerified, payload.verified_report);
         })
         .catch((e) => {
           if (!cancelled) {
@@ -217,7 +241,7 @@ export default function ReportDetail() {
       const { data } = await getReport(report?.id ?? cid, getReporterId());
       if (cancelled) return;
       if (data?.verified && data.verified.classification_id === cid) {
-        setVerified(data.verified);
+        setVerifiedStable(setVerified, data.verified);
         return;
       }
       if (Date.now() - startedAt > RECONCILE_POLL_TIMEOUT_MS) {
@@ -388,7 +412,7 @@ export default function ReportDetail() {
         const payload = data as { brief?: Brief } | null;
         if (payload?.brief) {
           respondedSync = true;
-          setBrief(payload.brief);
+          setBriefStable(setBrief, payload.brief);
           setAskPending(false);
           setAskText("");
         }
@@ -401,7 +425,7 @@ export default function ReportDetail() {
       const { data } = await getReport(id!, reporterId);
       const fresh = data?.brief;
       if (fresh && (!brief || fresh.id !== brief.id)) {
-        setBrief(fresh);
+        setBriefStable(setBrief, fresh);
         setAskPending(false);
         setAskText("");
         return;
