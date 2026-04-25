@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { inviteHeaders } from "../lib/invite";
 import { getReport, listReports } from "../lib/api";
+import { notify } from "../lib/notify";
 import type { Classification, Report, VerifiedReport } from "../lib/types";
 import { prettyPhenomenon } from "../lib/format";
 
@@ -19,7 +20,6 @@ export default function ReportsList() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [partialError, setPartialError] = useState<string | null>(null);
   const [busyFor, setBusyFor] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -58,7 +58,6 @@ export default function ReportsList() {
     if (!row.classification) return;
     const cid = row.classification.id;
     setBusyFor(cid);
-    setActionError(null);
     try {
       const { error } = await supabase.functions.invoke("reconcile", {
         body: { classification_id: cid, force: true },
@@ -67,7 +66,7 @@ export default function ReportsList() {
       // Same iOS-Safari tolerance as ReportDetail: FunctionsFetchError
       // is expected on long calls; the row lands server-side regardless.
       if (error && error.name !== "FunctionsFetchError") {
-        setActionError(`Re-run failed for ${row.report.id.slice(0, 8)}: ${error.message}`);
+        notify.error(`Re-run failed for ${row.report.id.slice(0, 8)}: ${error.message}`);
       }
       // Poll briefly for the fresh row before refreshing the whole list.
       // get-report returns the latest verified row alongside the report so we
@@ -109,11 +108,6 @@ export default function ReportsList() {
         </button>
       </header>
 
-      {actionError && (
-        <p className="mx-4 mb-2 rounded border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">
-          {actionError}
-        </p>
-      )}
       {partialError && (
         <p className="mx-4 mb-2 rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
           Partial load — {partialError}

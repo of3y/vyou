@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import toast from "react-hot-toast";
+import { notify } from "../lib/notify";
 import { hasInvite } from "../lib/invite";
 
 const STORAGE_KEY = "vyou_invite";
@@ -22,12 +22,12 @@ export default function InviteBanner() {
     if (!raw) return;
     const token = extractInviteToken(raw.trim());
     if (!token) {
-      toast.error("Couldn't find an invite token in that link");
+      notify.error("Couldn't find an invite token in that link");
       return;
     }
     window.localStorage.setItem(STORAGE_KEY, token);
     setMissing(false);
-    toast.success("Invite accepted — you're signed in");
+    notify.success("Invite accepted — you're signed in");
   }
 
   return (

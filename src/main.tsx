@@ -1,9 +1,9 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
-import { Toaster } from "react-hot-toast";
 
 import App from "./App";
+import Toaster from "./components/Toaster";
 import "./index.css";
 
 const root = document.getElementById("root");
@@ -13,7 +13,7 @@ createRoot(root).render(
   <StrictMode>
     <BrowserRouter>
       <App />
-      <Toaster position="top-center" toastOptions={{ style: { background: "#1f2430", color: "#e8ecf1" } }} />
+      <Toaster />
     </BrowserRouter>
   </StrictMode>,
 );
