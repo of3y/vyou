@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import MapView, { type LayerVisibility } from "../components/MapView";
 import LayerSwitcher from "../components/MapControls/LayerSwitcher";
 import TimeSlider from "../components/MapControls/TimeSlider";
+import StatusPill, { useConnStatus } from "../components/StatusPill";
 import type { LayerTime } from "../lib/layers/dwdRadar";
 import { listReports } from "../lib/api";
 import { getReporterId } from "../lib/reporter";
@@ -19,6 +20,8 @@ export default function MapPage() {
   const [visibility, setVisibility] = useState<LayerVisibility>(DEFAULT_VISIBILITY);
   const [questionsAvailable, setQuestionsAvailable] = useState(0);
   const [askTargetReportId, setAskTargetReportId] = useState<string | null>(null);
+  const conn = useConnStatus();
+  const { recordOk, recordError } = conn;
 
   // Surface "Ask" only when the local reporter has earned > used questions AND
   // owns a verified-match report to anchor the question to. /research is
@@ -31,8 +34,14 @@ export default function MapPage() {
       // list-reports returns both the recent reports + the profile keyed on
       // reporter_id, so we can derive questions_available and the most recent
       // owned match-verified report from a single invoke.
-      const { data } = await listReports({ reporter_id: reporterId, limit: 100 });
-      if (cancelled || !data) return;
+      const startedAt = performance.now();
+      const { data, error } = await listReports({ reporter_id: reporterId, limit: 100 });
+      if (cancelled) return;
+      if (error || !data) {
+        recordError();
+        return;
+      }
+      recordOk(performance.now() - startedAt);
 
       const available = data.profile
         ? Math.max(0, (data.profile.questions_earned ?? 0) - (data.profile.questions_used ?? 0))
@@ -51,7 +60,7 @@ export default function MapPage() {
       cancelled = true;
       clearInterval(interval);
     };
-  }, []);
+  }, [recordOk, recordError]);
 
   const showAsk = questionsAvailable >= 1 && askTargetReportId;
 
@@ -65,6 +74,7 @@ export default function MapPage() {
       >
         VYou
       </Link>
+      <StatusPill status={conn.status} lastOkAt={conn.lastOkAt} />
       <Link
         to="/reports"
         className="absolute right-4 z-10 rounded-full bg-black/60 px-3 py-1 text-xs text-white/80"

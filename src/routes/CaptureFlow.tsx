@@ -206,6 +206,10 @@ function PermissionsStep({ onGrant }: { onGrant: () => void }) {
         VYou needs camera, location, and device orientation to turn your sky photo into a directional cone on the shared map.
         On iOS, Safari will prompt for each in turn.
       </p>
+      <p className="max-w-md text-xs text-white/40">
+        Tip: hold the phone upright (portrait) when taking the photo — the heading is most
+        reliable that way. You can adjust it manually on the next step.
+      </p>
       <button
         onClick={onGrant}
         className="rounded-full bg-emerald-500 px-8 py-3 text-sm font-semibold text-black active:scale-95"
@@ -230,6 +234,33 @@ function CameraStep({
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [facing, setFacing] = useState<"environment" | "user">("environment");
+  const [isLandscape, setIsLandscape] = useState<boolean>(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
+    return window.matchMedia("(orientation: landscape)").matches;
+  });
+  const [landscapeDismissed, setLandscapeDismissed] = useState(false);
+
+  // Re-show the disclaimer on every portrait→landscape transition so testers
+  // who rotated mid-capture get the heads-up — heading math is most reliable
+  // when the device is held upright.
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const mq = window.matchMedia("(orientation: landscape)");
+    const update = (e: MediaQueryList | MediaQueryListEvent) => {
+      const next = e.matches;
+      setIsLandscape(next);
+      if (next) setLandscapeDismissed(false);
+    };
+    update(mq);
+    if (typeof mq.addEventListener === "function") {
+      mq.addEventListener("change", update);
+      return () => mq.removeEventListener("change", update);
+    }
+    // Older Safari fallback.
+    const legacyHandler = (e: MediaQueryListEvent) => update(e);
+    mq.addListener(legacyHandler);
+    return () => mq.removeListener(legacyHandler);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -330,6 +361,32 @@ function CameraStep({
           <TrustDot tier={compassT} />
           <span className="tabular-nums opacity-70">{compassLabel(compassAccuracyDeg)}</span>
         </div>
+        {isLandscape && !landscapeDismissed && (
+          <div
+            className="absolute left-3 right-3 z-10 rounded-xl border border-amber-400/70 bg-amber-500/95 px-4 py-3 text-xs text-amber-950 shadow-lg"
+            style={{ top: "calc(3.75rem + env(safe-area-inset-top))" }}
+            role="alert"
+          >
+            <div className="flex items-start gap-3">
+              <div className="flex-1">
+                <p className="font-semibold">Landscape detected</p>
+                <p className="mt-1 leading-snug">
+                  Heading is most accurate when the phone is held upright. If you stay in
+                  landscape, double-check the live heading above against the direction you're
+                  pointing, and adjust on the next step if needed.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setLandscapeDismissed(true)}
+                className="rounded-full bg-amber-950/15 px-2 py-0.5 text-[11px] font-semibold text-amber-950"
+                aria-label="Dismiss landscape notice"
+              >
+                Got it
+              </button>
+            </div>
+          </div>
+        )}
       </div>
       <div
         className="relative flex shrink-0 items-center justify-between gap-4 bg-black px-6 pt-4"
