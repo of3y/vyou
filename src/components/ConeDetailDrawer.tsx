@@ -89,6 +89,20 @@ export default function ConeDetailDrawer({ reportId, onClose }: Props) {
       dismissible
     >
       <Drawer.Portal>
+        {/* Transparent click-shield over everything above the drawer card.
+            Vaul's modal={false} skips its own overlay because we don't want
+            to dim or block the map underneath, but that also kills the
+            standard tap-outside-to-dismiss affordance. The shield restores
+            it: any tap above the 50dvh drawer card closes the drawer.
+            Sits below the drawer (z-40) so card taps still hit the card. */}
+        <button
+          type="button"
+          aria-label="Close cone detail"
+          tabIndex={-1}
+          onClick={onClose}
+          className="fixed inset-x-0 top-0 z-40 cursor-default bg-transparent"
+          style={{ bottom: "50dvh" }}
+        />
         <Drawer.Content
           className="fixed inset-x-0 bottom-0 z-50 flex flex-col overflow-hidden rounded-t-[28px] border border-white/10 bg-[#1a1c22]/70 text-white outline-none backdrop-blur-2xl"
           style={{ height: "50dvh" }}
