@@ -438,6 +438,11 @@ export default function ReportDetail() {
           onSubmit={submitQuestion}
           pending={askPending}
           error={askError}
+          hasClassification={!!classification}
+          verifyRequested={verifyRequested}
+          verified={verified}
+          verifyError={verifyError}
+          onVerify={startVerification}
         />
         {SHOW_DEBUG && (
           <details className="rounded-lg border border-white/10 bg-white/5 p-4 text-sm" open>
@@ -545,11 +550,16 @@ function ClassificationCard({
   return (
     <section className="rounded-lg border border-white/10 bg-white/5 p-4 text-sm">
       <div className="flex items-center justify-between">
-        <p className="text-white/50 text-xs uppercase tracking-wider">Classifier</p>
+        <p className="text-white/40 text-[10px] uppercase tracking-wider">
+          <span className="text-white/60">Evidence · </span>Photo classifier
+        </p>
         <ConfidencePill value={classification.confidence} />
       </div>
       <p className="mt-1 text-2xl font-semibold tracking-tight">
         {prettyPhenomenon(classification.phenomenon)}
+      </p>
+      <p className="mt-1 text-[11px] text-white/40">
+        One of three agents grounding this report. Verify against radar to add Reconciliation + Open-Meteo evidence and earn a Deep Researcher question.
       </p>
       {classification.hail_size_cm !== null && (
         <p className="mt-1 text-xs text-white/50">Estimated hail size: {classification.hail_size_cm} cm</p>
@@ -699,6 +709,11 @@ function QuestionCard({
   onSubmit,
   pending,
   error,
+  hasClassification,
+  verifyRequested,
+  verified,
+  verifyError,
+  onVerify,
 }: {
   questionsAvailable: number;
   ungated: boolean;
@@ -708,6 +723,11 @@ function QuestionCard({
   onSubmit: () => void;
   pending: boolean;
   error: string | null;
+  hasClassification: boolean;
+  verifyRequested: boolean;
+  verified: VerifiedReport | null;
+  verifyError: string | null;
+  onVerify: () => void;
 }) {
   const canAsk = ungated || questionsAvailable >= 1;
 
@@ -744,14 +764,82 @@ function QuestionCard({
   }
 
   if (!canAsk) {
+    const verifying = verifyRequested && !verified;
+    const verdictMatched = verified?.verdict === "match";
+    const verdictNotMatched = verified && verified.verdict !== "match";
+    const earningLedger = verdictMatched && questionsAvailable < 1;
+
     return (
-      <section className="flex flex-col gap-3 rounded-lg border border-white/10 bg-white/5 p-4 text-sm">
-        <div>
-          <p className="text-white/50 text-xs uppercase tracking-wider">Earn a question</p>
-          <p className="mt-1 text-white/80">
-            Verify a sky photo against radar to earn a question. Use it to ask Deep Researcher anything weather-grounded — best park for lunch in the next two hours, whether to head up the mountain this afternoon.
-          </p>
+      <section className="flex flex-col gap-3 rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-4 text-sm">
+        <div className="flex items-center justify-between">
+          <p className="text-emerald-200/70 text-xs uppercase tracking-wider">Earn a question</p>
+          {verified && (
+            <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] uppercase tracking-wider text-white/50">
+              {verified.verdict}
+            </span>
+          )}
         </div>
+
+        {!verifyRequested && !verified && hasClassification && (
+          <>
+            <p className="text-white/80 leading-relaxed">
+              Verify this sky photo against DWD radar + Open-Meteo + MTG satellite to earn one Deep Researcher question. Ask anything weather-grounded — best park for lunch, whether to head up the mountain, will the sunset hold.
+            </p>
+            <button
+              type="button"
+              onClick={onVerify}
+              className="self-start rounded-full bg-emerald-500 px-5 py-2 text-sm font-semibold text-black shadow-lg active:scale-95"
+            >
+              Verify against radar
+            </button>
+            <p className="text-[10px] text-white/30">~10–60s · uses Reconciliation CMA</p>
+          </>
+        )}
+
+        {!hasClassification && !verifyRequested && (
+          <p className="text-white/60 text-xs">Waiting for the photo classifier to land before you can verify.</p>
+        )}
+
+        {verifying && (
+          <div className="flex items-center gap-3 text-white/70">
+            <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
+            <span>Reconciling photo against radar + Open-Meteo + MTG…</span>
+          </div>
+        )}
+
+        {earningLedger && (
+          <div className="flex items-center gap-3 text-white/70">
+            <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
+            <span>Match verified — earning your question.</span>
+          </div>
+        )}
+
+        {verdictNotMatched && (
+          <>
+            <p className="text-white/80">
+              Reconciliation came back <strong>{verified.verdict}</strong>. The photo and the weather signal didn't line up clearly enough to grant a question. A clearer sky shot from outdoors usually does it.
+            </p>
+            <Link
+              to="/capture"
+              className="self-start rounded-full bg-emerald-500 px-4 py-2 text-xs font-semibold text-black active:scale-95"
+            >
+              Take another sky photo
+            </Link>
+          </>
+        )}
+
+        {verifyError && (
+          <>
+            <p className="text-amber-200 text-xs">{verifyError}</p>
+            <button
+              type="button"
+              onClick={onVerify}
+              className="self-start rounded-full bg-white/10 px-4 py-2 text-xs font-medium text-white/90 active:scale-95"
+            >
+              Try again
+            </button>
+          </>
+        )}
       </section>
     );
   }
