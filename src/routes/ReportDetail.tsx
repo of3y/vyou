@@ -264,38 +264,67 @@ export default function ReportDetail() {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const reporterId = getReporterId();
+    if (DEV_DEBUG) console.info("[profile-poll] reporter_id", reporterId);
 
     async function tick() {
       if (cancelled) return;
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("reporter_id, questions_earned, questions_used")
-        .eq("reporter_id", reporterId)
-        .maybeSingle();
-      if (cancelled) return;
-      if (error) {
-        // Most common failure here is the migration not yet applied. Fall
-        // back to the always-allow path described in the brief.
-        setProfileMissing(true);
-        return;
-      }
-      const next: EarnedQuestion = data
-        ? (data as EarnedQuestion)
-        : { reporter_id: reporterId, questions_earned: 0, questions_used: 0 };
-      setProfile((prev) => {
-        const prevEarned = lastEarnedRef.current ?? prev?.questions_earned ?? next.questions_earned;
-        if (next.questions_earned > prevEarned) {
-          setToast("1 question earned");
+      try {
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("reporter_id, questions_earned, questions_used")
+          .eq("reporter_id", reporterId)
+          .maybeSingle();
+        if (cancelled) return;
+        if (error) {
+          // Migration not applied or transient RLS/network hiccup. Mark as
+          // missing so the UI falls through to the always-allow path; keep
+          // polling so we recover when the underlying issue clears.
+          setProfileMissing(true);
+        } else {
+          setProfileMissing(false);
+          const next: EarnedQuestion = data
+            ? (data as EarnedQuestion)
+            : { reporter_id: reporterId, questions_earned: 0, questions_used: 0 };
+          setProfile((prev) => {
+            const prevEarned = lastEarnedRef.current ?? prev?.questions_earned ?? next.questions_earned;
+            if (next.questions_earned > prevEarned) {
+              setToast("1 question earned");
+            }
+            lastEarnedRef.current = next.questions_earned;
+            return next;
+          });
         }
-        lastEarnedRef.current = next.questions_earned;
-        return next;
-      });
-      timer = setTimeout(tick, 4000);
+      } catch (e) {
+        // iOS PWA backgrounding can abort an in-flight fetch with a thrown
+        // error rather than the supabase-js error envelope. Without this
+        // catch the async function unwinds and the reschedule below would
+        // never run — silently killing the polling loop until reload.
+        console.warn("[profile-poll] tick threw", e);
+      } finally {
+        if (!cancelled) timer = setTimeout(tick, 4000);
+      }
     }
     tick();
+
+    function onVisible() {
+      if (typeof document === "undefined") return;
+      if (document.visibilityState !== "visible") return;
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      tick();
+    }
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", onVisible);
+    }
+
     return () => {
       cancelled = true;
       if (timer) clearTimeout(timer);
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", onVisible);
+      }
     };
   }, []);
 
@@ -483,7 +512,14 @@ export default function ReportDetail() {
             <summary className="cursor-pointer text-xs uppercase tracking-wider text-white/50">
               Debug · Reconciliation
             </summary>
-            <div className="mt-3">
+            <div className="mt-3 space-y-3">
+              <p className="break-all font-mono text-[10px] text-white/40">
+                reporter_id: {getReporterId()}
+                {profile && (
+                  <> · earned {profile.questions_earned} · used {profile.questions_used}</>
+                )}
+                {profileMissing && <> · profileMissing=true</>}
+              </p>
               <VerifiedCard
                 verified={verified}
                 error={verifyError}
@@ -842,9 +878,18 @@ function QuestionCard({
         )}
 
         {earningLedger && (
-          <div className="flex items-center gap-3 text-white/70">
-            <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
-            <span>Match verified — earning your question.</span>
+          <div className="flex flex-col gap-2 text-white/70">
+            <div className="flex items-center gap-3">
+              <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
+              <span>Match verified — earning your question.</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => location.reload()}
+              className="self-start rounded-full bg-white/10 px-3 py-1 text-[11px] font-medium text-white/70 active:scale-95"
+            >
+              Stuck? Refresh
+            </button>
           </div>
         )}
 
