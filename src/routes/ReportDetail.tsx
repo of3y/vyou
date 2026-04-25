@@ -2,10 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import MapView from "../components/MapView";
+import WeatherChip from "../components/WeatherChip";
 import type { Brief, BriefSource, Classification, Confidence, EarnedQuestion, Report, SessionStats, VerifiedReport } from "../lib/types";
 import { inviteHeaders } from "../lib/invite";
 import { getReport } from "../lib/api";
-import { prettyPhenomenon } from "../lib/format";
+import { cardinalFromDegrees, prettyPhenomenon } from "../lib/format";
 import { getReporterId } from "../lib/reporter";
 
 const POLL_INTERVAL_MS = 2500;
@@ -445,132 +446,167 @@ export default function ReportDetail() {
 
   if (error) {
     return (
-      <div className="flex h-dvh flex-col items-center justify-center gap-4 p-6 text-center text-red-400">
-        <p>Could not load report.</p>
-        <p className="text-xs text-white/40">{error}</p>
-        <Link to="/" className="rounded-full bg-white/10 px-4 py-2 text-sm">Back to map</Link>
+      <div className="flex h-dvh flex-col items-center justify-center gap-4 bg-[#0f1115] p-6 text-center text-rose-300">
+        <p className="text-[15px]">Could not load report.</p>
+        <p className="text-[12px] text-white/40">{error}</p>
+        <Link
+          to="/"
+          className="rounded-full border border-white/10 bg-white/[0.08] px-4 py-2 text-sm text-white/90 backdrop-blur-xl transition-colors hover:bg-white/[0.14]"
+        >
+          Back to map
+        </Link>
       </div>
     );
   }
 
   if (!report) {
-    return <div className="flex h-dvh items-center justify-center text-white/60">Loading report…</div>;
+    return (
+      <div className="flex h-dvh items-center justify-center bg-[#0f1115] text-white/60">
+        <span className="inline-flex items-center gap-2.5 text-[14px]">
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+          Loading report…
+        </span>
+      </div>
+    );
   }
 
+  const captured = new Date(report.captured_at);
+  const ageMin = Math.max(0, Math.round((Date.now() - captured.getTime()) / 60000));
+  const ageLabel = ageMin === 0 ? "Just now" : ageMin === 1 ? "1 min ago" : `${ageMin} min ago`;
+  const cardinal = cardinalFromDegrees(report.heading_degrees);
+  const headingDeg = Math.round(report.heading_degrees);
+
   return (
-    <div className="flex h-dvh flex-col bg-black text-white">
+    <div className="flex h-dvh flex-col bg-[#0f1115] text-white">
       <header
-        className="flex items-center justify-between px-4 py-3"
+        className="sticky top-0 z-20 flex items-center justify-between border-b border-white/[0.06] bg-[#0f1115]/85 px-4 py-3 backdrop-blur-xl"
         style={{ paddingTop: "calc(0.75rem + env(safe-area-inset-top))" }}
       >
         <Link
           to="/"
-          className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5 text-sm text-white/90 active:scale-95"
-          aria-label="Home"
+          aria-label="Back to map"
+          className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.08] px-3 py-1.5 text-[13px] font-medium text-white/85 backdrop-blur-xl transition-colors hover:bg-white/[0.14] hover:text-white active:scale-[0.95]"
         >
-          <span aria-hidden>🏠</span>
-          <span>Home</span>
+          <BackIcon />
+          <span>Map</span>
         </Link>
-        <span className="text-xs uppercase tracking-wider text-white/40">Report</span>
+        <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/40">
+          Report
+        </span>
+        <span className="w-[68px]" aria-hidden />
       </header>
-      <div className="aspect-[16/9] w-full sm:aspect-[2/1]">
-        <MapView center={[report.lon, report.lat]} zoom={12} />
-      </div>
-      <main className="flex-1 space-y-4 overflow-y-auto p-6 text-sm">
-        {report.photo_url && (
-          <section>
+
+      <main className="flex-1 overflow-y-auto">
+        <div className="relative">
+          <div className="aspect-[16/9] w-full overflow-hidden sm:aspect-[2/1]">
+            <MapView center={[report.lon, report.lat]} zoom={12} />
+          </div>
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-b from-transparent to-[#0f1115]" />
+        </div>
+
+        <div
+          className="space-y-5 px-5 pt-5"
+          style={{ paddingBottom: "calc(2rem + env(safe-area-inset-bottom))" }}
+        >
+          <header className="min-w-0">
+            <h1 className="text-[26px] font-semibold leading-tight tracking-tight text-white">
+              {classification ? prettyPhenomenon(classification.phenomenon) : "Classifying…"}
+            </h1>
+            <p className="mt-1 text-[13px] text-white/50">
+              {ageLabel} · facing {cardinal} · {headingDeg}°
+            </p>
+            <WeatherChip lat={report.lat} lon={report.lon} capturedAt={report.captured_at} />
+          </header>
+
+          {report.photo_url && (
             <button
               type="button"
               onClick={() => setEnlarged(true)}
-              className="relative block w-full overflow-hidden rounded-lg border border-white/10 bg-black active:scale-[0.99]"
+              className="relative block w-full overflow-hidden rounded-3xl bg-black shadow-[0_8px_32px_-12px_rgba(0,0,0,0.6)] ring-1 ring-white/[0.06] transition-transform active:scale-[0.99]"
               aria-label="Enlarge photo"
             >
               <img
                 src={report.photo_url}
                 alt="Submitted sky photo"
-                className="w-full"
+                className="block w-full"
                 loading="lazy"
               />
-              <span className="pointer-events-none absolute bottom-2 right-2 rounded-full bg-black/70 px-2 py-0.5 text-[10px] uppercase tracking-wider text-white/70 backdrop-blur">
+              <span className="pointer-events-none absolute bottom-3 right-3 rounded-full border border-white/10 bg-black/55 px-2.5 py-1 text-[10px] font-medium uppercase tracking-wider text-white/80 backdrop-blur-xl">
                 Tap to enlarge
               </span>
             </button>
-          </section>
-        )}
-        <ClassificationCard classification={classification} error={classifyError} onRetry={retryClassify} />
-        <QuestionCard
-          questionsAvailable={questionsAvailable}
-          ungated={ungated}
-          brief={brief}
-          askText={askText}
-          onAskTextChange={setAskText}
-          onSubmit={submitQuestion}
-          pending={askPending}
-          error={askError}
-          hasClassification={!!classification}
-          verifyRequested={verifyRequested}
-          verified={verified}
-          verifyError={verifyError}
-          onVerify={startVerification}
-        />
-        {SHOW_DEBUG && (
-          <details className="rounded-lg border border-white/10 bg-white/5 p-4 text-sm" open>
-            <summary className="cursor-pointer text-xs uppercase tracking-wider text-white/50">
-              Debug · Reconciliation
-            </summary>
-            <div className="mt-3 space-y-3">
-              <p className="break-all font-mono text-[10px] text-white/40">
-                reporter_id: {getReporterId()}
-                {profile && (
-                  <> · earned {profile.questions_earned} · used {profile.questions_used}</>
-                )}
-                {profileMissing && <> · profileMissing=true</>}
-              </p>
-              <VerifiedCard
-                verified={verified}
-                error={verifyError}
-                hasClassification={!!classification}
-                requested={verifyRequested}
-                onVerify={startVerification}
-              />
-            </div>
-          </details>
-        )}
-        <section>
-          <p className="text-white/50">Heading</p>
-          <p className="text-xl font-semibold tabular-nums">{Math.round(report.heading_degrees)}°</p>
-        </section>
-        <section>
-          <p className="text-white/50">Location</p>
-          <p className="tabular-nums">{report.lat.toFixed(5)}, {report.lon.toFixed(5)}</p>
-        </section>
-        <section>
-          <p className="text-white/50">Captured</p>
-          <p>{new Date(report.captured_at).toLocaleString()}</p>
-        </section>
-        {report.caption && (
-          <section>
-            <p className="text-white/50">Caption</p>
-            <p>{report.caption}</p>
-          </section>
-        )}
+          )}
+
+          <ClassificationCard classification={classification} error={classifyError} onRetry={retryClassify} />
+
+          <QuestionCard
+            questionsAvailable={questionsAvailable}
+            ungated={ungated}
+            brief={brief}
+            askText={askText}
+            onAskTextChange={setAskText}
+            onSubmit={submitQuestion}
+            pending={askPending}
+            error={askError}
+            hasClassification={!!classification}
+            verifyRequested={verifyRequested}
+            verified={verified}
+            verifyError={verifyError}
+            onVerify={startVerification}
+          />
+
+          {SHOW_DEBUG && (
+            <details className="rounded-3xl bg-white/[0.04] p-5 ring-1 ring-white/[0.06]" open>
+              <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-[0.18em] text-white/40">
+                Debug · Reconciliation
+              </summary>
+              <div className="mt-4 space-y-3">
+                <p className="break-all font-mono text-[10px] text-white/40">
+                  reporter_id: {getReporterId()}
+                  {profile && (
+                    <> · earned {profile.questions_earned} · used {profile.questions_used}</>
+                  )}
+                  {profileMissing && <> · profileMissing=true</>}
+                </p>
+                <VerifiedCard
+                  verified={verified}
+                  error={verifyError}
+                  hasClassification={!!classification}
+                  requested={verifyRequested}
+                  onVerify={startVerification}
+                />
+              </div>
+            </details>
+          )}
+
+          <MetaCard
+            heading={headingDeg}
+            cardinal={cardinal}
+            lat={report.lat}
+            lon={report.lon}
+            capturedAt={report.captured_at}
+            caption={report.caption}
+          />
+        </div>
       </main>
+
       {toast && (
         <div
           role="status"
           className="pointer-events-none fixed inset-x-0 z-40 flex justify-center px-4"
           style={{ bottom: "calc(1.5rem + env(safe-area-inset-bottom))" }}
         >
-          <div className="rounded-full bg-emerald-500/90 px-4 py-2 text-xs font-medium text-emerald-950 shadow-lg">
+          <div className="rounded-full bg-emerald-500/95 px-4 py-2 text-xs font-medium text-emerald-950 shadow-[0_8px_32px_-8px_rgba(16,185,129,0.5)]">
             {toast}
           </div>
         </div>
       )}
+
       {enlarged && report.photo_url && (
         <button
           type="button"
           onClick={() => setEnlarged(false)}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 p-4 backdrop-blur-xl"
           aria-label="Close enlarged photo"
         >
           <img
@@ -579,10 +615,11 @@ export default function ReportDetail() {
             className="max-h-full max-w-full object-contain"
           />
           <span
-            className="absolute right-4 rounded-full bg-white/10 px-3 py-1 text-xs text-white/80"
+            className="absolute right-4 inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/[0.08] text-white/80 backdrop-blur-xl"
             style={{ top: "calc(1rem + env(safe-area-inset-top))" }}
+            aria-hidden
           >
-            Tap to close
+            <CloseIcon />
           </span>
         </button>
       )}
@@ -601,12 +638,12 @@ function ClassificationCard({
 }) {
   if (error) {
     return (
-      <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-xs text-red-200">
+      <section className="flex flex-wrap items-center justify-between gap-3 rounded-3xl bg-rose-500/10 p-4 text-[13px] text-rose-200 ring-1 ring-rose-500/25">
         <span>{error}</span>
         <button
           type="button"
           onClick={onRetry}
-          className="rounded-full bg-red-500/20 px-3 py-1 text-[11px] font-medium text-red-100 active:scale-95"
+          className="rounded-full bg-rose-500/20 px-3 py-1 text-[11px] font-medium text-rose-100 ring-1 ring-rose-500/30 transition-colors hover:bg-rose-500/30 active:scale-95"
         >
           Retry
         </button>
@@ -615,44 +652,78 @@ function ClassificationCard({
   }
   if (!classification) {
     return (
-      <section className="rounded-lg border border-white/10 bg-white/5 p-4 text-xs text-white/50">
-        <span className="inline-flex items-center gap-2">
-          <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
-          Classifying with Opus 4.7…
-        </span>
+      <section className="flex items-center gap-2.5 rounded-3xl bg-white/[0.04] px-4 py-3.5 text-[14px] text-white/65 ring-1 ring-white/[0.06]">
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+        Reading the sky with Opus 4.7…
       </section>
     );
   }
+  const confidenceCopy: Record<Confidence, string> = {
+    high: "Highly confident read",
+    medium: "Reasonably confident read",
+    low: "Tentative read",
+  };
+  const confidenceTone: Record<Confidence, string> = {
+    high: "text-emerald-300/90",
+    medium: "text-amber-300/90",
+    low: "text-rose-300/90",
+  };
+  const confidence = classification.confidence;
+  const features = classification.features ?? [];
+  const hail = classification.hail_size_cm;
+
   return (
-    <section className="rounded-lg border border-white/10 bg-white/5 p-4 text-sm">
-      <div className="flex items-center justify-between">
-        <p className="text-white/40 text-[10px] uppercase tracking-wider">
-          <span className="text-white/60">Evidence · </span>Photo classifier
-        </p>
-        <ConfidencePill value={classification.confidence} />
+    <section className="rounded-3xl bg-gradient-to-b from-white/[0.06] to-white/[0.02] p-5 ring-1 ring-white/[0.06]">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[13px] font-medium text-white/65">In this sky</p>
+        {confidence && (
+          <span className={`text-[11px] font-medium ${confidenceTone[confidence]}`}>
+            {confidenceCopy[confidence]}
+          </span>
+        )}
       </div>
-      <p className="mt-1 text-2xl font-semibold tracking-tight">
-        {prettyPhenomenon(classification.phenomenon)}
-      </p>
-      <p className="mt-1 text-[11px] text-white/40">
+
+      {features.length > 0 ? (
+        <p className="mt-3 text-[15px] leading-relaxed text-white/85">
+          {joinFeatures(features)}
+        </p>
+      ) : (
+        <p className="mt-3 text-[14px] leading-relaxed text-white/60">
+          The classifier didn't surface specific cloud features for this view.
+        </p>
+      )}
+
+      {hail !== null && hail !== undefined && (
+        <div className="mt-4 flex items-center gap-3 rounded-2xl bg-white/[0.05] px-4 py-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/[0.08] text-[15px]">
+            🧊
+          </div>
+          <div>
+            <p className="text-[11px] uppercase tracking-wider text-white/45">Hail</p>
+            <p className="text-[15px] font-medium text-white/90">~{hail} cm across</p>
+          </div>
+        </div>
+      )}
+
+      <p className="mt-4 text-[12px] leading-relaxed text-white/40">
         One of three agents grounding this report. Verify against radar to add Reconciliation + Open-Meteo evidence and earn a Deep Researcher question.
       </p>
-      {classification.hail_size_cm !== null && (
-        <p className="mt-1 text-xs text-white/50">Estimated hail size: {classification.hail_size_cm} cm</p>
-      )}
-      {classification.features && classification.features.length > 0 && (
-        <ul className="mt-3 space-y-1 text-xs text-white/70">
-          {classification.features.map((f, i) => (
-            <li key={i} className="flex gap-2">
-              <span className="text-white/30">•</span>
-              <span>{f}</span>
-            </li>
-          ))}
-        </ul>
-      )}
       <CostFooter stats={classification.session_stats} label="Classifier" />
     </section>
   );
+}
+
+function joinFeatures(features: string[]): string {
+  const cleaned = features.map((f) => f.trim()).filter(Boolean);
+  if (cleaned.length === 0) return "";
+  return cleaned.map(ensureSentence).join(" ");
+}
+
+function ensureSentence(s: string): string {
+  const trimmed = s.trim();
+  if (!trimmed) return "";
+  const capitalized = trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+  return /[.!?]$/.test(capitalized) ? capitalized : `${capitalized}.`;
 }
 
 function VerifiedCard({
@@ -671,12 +742,12 @@ function VerifiedCard({
   if (!hasClassification) return null;
   if (error) {
     return (
-      <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-xs text-red-200">
+      <section className="flex flex-wrap items-center justify-between gap-3 rounded-3xl bg-rose-500/10 p-4 text-[13px] text-rose-200 ring-1 ring-rose-500/25">
         <span>{error}</span>
         <button
           type="button"
           onClick={onVerify}
-          className="rounded-full bg-red-500/20 px-3 py-1 text-[11px] font-medium text-red-100 active:scale-95"
+          className="rounded-full bg-rose-500/20 px-3 py-1 text-[11px] font-medium text-rose-100 ring-1 ring-rose-500/30 transition-colors hover:bg-rose-500/30 active:scale-95"
         >
           Retry
         </button>
@@ -685,17 +756,18 @@ function VerifiedCard({
   }
   if (!verified && !requested) {
     return (
-      <section className="flex flex-col gap-3 rounded-lg border border-white/10 bg-white/5 p-4 text-sm">
+      <section className="flex flex-col gap-3 rounded-3xl bg-white/[0.04] p-5 ring-1 ring-white/[0.06]">
         <div>
-          <p className="text-white/50 text-xs uppercase tracking-wider">Reconciliation</p>
-          <p className="mt-1 text-white/70">
+          <p className="text-[13px] font-medium text-white/65">Reconciliation</p>
+          <p className="mt-2 text-[14px] leading-relaxed text-white/70">
             Compare this photo against DWD radar to verify the classification. Opens a paid Opus 4.7 session.
           </p>
         </div>
         <button
           type="button"
           onClick={onVerify}
-          className="self-start rounded-full bg-sky-500/20 px-4 py-2 text-xs font-medium text-sky-100 ring-1 ring-sky-500/30 active:scale-95"
+          className="self-start rounded-full bg-white px-5 text-[13px] font-semibold text-black shadow-lg transition-colors hover:bg-white/90 active:scale-[0.98]"
+          style={{ height: 40 }}
         >
           Verify against radar
         </button>
@@ -704,25 +776,47 @@ function VerifiedCard({
   }
   if (!verified) {
     return (
-      <section className="rounded-lg border border-white/10 bg-white/5 p-4 text-xs text-white/50">
-        <span className="inline-flex items-center gap-2">
-          <span className="h-2 w-2 animate-pulse rounded-full bg-sky-400" />
-          Reconciling against DWD RADOLAN…
-        </span>
+      <section className="flex items-center gap-2.5 rounded-3xl bg-white/[0.04] px-4 py-3.5 text-[14px] text-white/65 ring-1 ring-white/[0.06]">
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-sky-400" />
+        Reconciling against DWD RADOLAN…
       </section>
     );
   }
+  const verdictMeta: Record<VerifiedReport["verdict"], { icon: string; tone: string; label: string }> = {
+    match: {
+      icon: "✓",
+      tone: "bg-emerald-500/15 text-emerald-300 ring-emerald-500/25",
+      label: "Confirmed against radar",
+    },
+    mismatch: {
+      icon: "!",
+      tone: "bg-rose-500/15 text-rose-300 ring-rose-500/25",
+      label: "Radar disagrees",
+    },
+    inconclusive: {
+      icon: "·",
+      tone: "bg-white/[0.06] text-white/60 ring-white/10",
+      label: "Radar inconclusive",
+    },
+  };
+  const m = verdictMeta[verified.verdict];
   return (
-    <section className="rounded-lg border border-white/10 bg-white/5 p-4 text-sm">
-      <div className="flex items-center justify-between">
-        <p className="text-white/50 text-xs uppercase tracking-wider">Reconciliation</p>
-        <VerdictPill verdict={verified.verdict} />
+    <section className="rounded-3xl bg-white/[0.04] p-5 ring-1 ring-white/[0.06]">
+      <div className="flex items-start gap-3">
+        <span
+          className={`mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[14px] font-semibold ring-1 ${m.tone}`}
+        >
+          {m.icon}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-[14px] font-medium text-white/90">{m.label}</p>
+          {verified.rationale && (
+            <p className="mt-1 text-[13.5px] leading-relaxed text-white/65">{verified.rationale}</p>
+          )}
+        </div>
       </div>
-      {verified.rationale && (
-        <p className="mt-2 text-sm leading-relaxed text-white/80">{verified.rationale}</p>
-      )}
       {verified.radar_frame_url && (
-        <figure className="mt-3 overflow-hidden rounded-md border border-white/10 bg-black/40">
+        <figure className="mt-4 overflow-hidden rounded-2xl bg-black/40 ring-1 ring-white/[0.06]">
           <img
             src={verified.radar_frame_url}
             alt="DWD RADOLAN radar frame compared against the report"
@@ -730,13 +824,13 @@ function VerifiedCard({
             loading="lazy"
             referrerPolicy="no-referrer"
           />
-          <figcaption className="flex items-center justify-between px-2 py-1 text-[10px] text-white/40">
+          <figcaption className="flex items-center justify-between px-3 py-1.5 text-[10px] text-white/40">
             <span>DWD RADOLAN frame</span>
             <a
               href={verified.radar_frame_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="underline underline-offset-2"
+              className="text-white/55 underline underline-offset-2 transition-colors hover:text-white/80"
             >
               Open in new tab
             </a>
@@ -745,34 +839,6 @@ function VerifiedCard({
       )}
       <CostFooter stats={verified.session_stats} label="Reconciliation" />
     </section>
-  );
-}
-
-function ConfidencePill({ value }: { value: Confidence | null }) {
-  const tone: Record<Confidence | "unknown", string> = {
-    high: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
-    medium: "bg-amber-500/15 text-amber-300 border-amber-500/30",
-    low: "bg-red-500/15 text-red-300 border-red-500/30",
-    unknown: "bg-white/5 text-white/40 border-white/10",
-  };
-  const v = value ?? "unknown";
-  return (
-    <span className={`rounded-full border px-2.5 py-0.5 text-[10px] uppercase tracking-wider ${tone[v]}`}>
-      {v} confidence
-    </span>
-  );
-}
-
-function VerdictPill({ verdict }: { verdict: VerifiedReport["verdict"] }) {
-  const tone: Record<VerifiedReport["verdict"], string> = {
-    match: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
-    mismatch: "bg-red-500/15 text-red-300 border-red-500/30",
-    inconclusive: "bg-white/5 text-white/50 border-white/10",
-  };
-  return (
-    <span className={`rounded-full border px-2.5 py-0.5 text-[10px] uppercase tracking-wider ${tone[verdict]}`}>
-      {verdict}
-    </span>
   );
 }
 
@@ -809,19 +875,19 @@ function QuestionCard({
 
   if (brief) {
     return (
-      <section className="rounded-lg border border-white/10 bg-white/5 p-4 text-sm">
-        <div className="flex items-center justify-between">
-          <p className="text-white/50 text-xs uppercase tracking-wider">Answer</p>
+      <section className="rounded-3xl bg-gradient-to-b from-white/[0.06] to-white/[0.02] p-5 ring-1 ring-white/[0.06]">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-[13px] font-medium text-white/65">Answer</p>
           {!ungated && (
-            <span className="text-[10px] uppercase tracking-wider text-white/40">
+            <span className="text-[11px] font-medium text-white/45">
               {questionsAvailable} {questionsAvailable === 1 ? "question" : "questions"} left
             </span>
           )}
         </div>
         {brief.question && (
-          <p className="mt-2 text-xs italic text-white/50">"{brief.question}"</p>
+          <p className="mt-3 text-[12.5px] italic text-white/50">"{brief.question}"</p>
         )}
-        <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-white/90">{brief.content}</p>
+        <p className="mt-3 whitespace-pre-line text-[15px] leading-relaxed text-white/90">{brief.content}</p>
         <SourcesRow sources={brief.sources} />
       </section>
     );
@@ -829,12 +895,12 @@ function QuestionCard({
 
   if (pending) {
     return (
-      <section className="rounded-lg border border-white/10 bg-white/5 p-4 text-xs text-white/60">
-        <span className="inline-flex items-center gap-2">
-          <span className="h-2 w-2 animate-pulse rounded-full bg-sky-400" />
+      <section className="rounded-3xl bg-white/[0.04] p-4 ring-1 ring-white/[0.06]">
+        <div className="flex items-center gap-2.5 text-[14px] text-white/65">
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-sky-400" />
           Composing your answer…
-        </span>
-        {error && <p className="mt-2 text-amber-300">{error}</p>}
+        </div>
+        {error && <p className="mt-2 text-[12px] text-amber-300">{error}</p>}
       </section>
     );
   }
@@ -844,13 +910,20 @@ function QuestionCard({
     const verdictMatched = verified?.verdict === "match";
     const verdictNotMatched = verified && verified.verdict !== "match";
     const earningLedger = verdictMatched && questionsAvailable < 1;
+    const verdictTone: Record<VerifiedReport["verdict"], string> = {
+      match: "bg-emerald-500/15 text-emerald-300 ring-emerald-500/25",
+      mismatch: "bg-rose-500/15 text-rose-300 ring-rose-500/25",
+      inconclusive: "bg-white/[0.06] text-white/60 ring-white/10",
+    };
 
     return (
-      <section className="flex flex-col gap-3 rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-4 text-sm">
-        <div className="flex items-center justify-between">
-          <p className="text-emerald-200/70 text-xs uppercase tracking-wider">Earn a question</p>
+      <section className="flex flex-col gap-4 rounded-3xl bg-gradient-to-b from-emerald-500/[0.08] to-emerald-500/[0.02] p-5 ring-1 ring-emerald-500/15">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-[13px] font-medium text-emerald-200/80">Earn a question</p>
           {verified && (
-            <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] uppercase tracking-wider text-white/50">
+            <span
+              className={`rounded-full px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-wider ring-1 ${verdictTone[verified.verdict]}`}
+            >
               {verified.verdict}
             </span>
           )}
@@ -858,41 +931,42 @@ function QuestionCard({
 
         {!verifyRequested && !verified && hasClassification && (
           <>
-            <p className="text-white/80 leading-relaxed">
+            <p className="text-[14px] leading-relaxed text-white/80">
               Verify this sky photo against DWD radar + Open-Meteo + MTG satellite to earn one Deep Researcher question. Ask anything weather-grounded — best park for lunch, whether to head up the mountain, will the sunset hold.
             </p>
             <button
               type="button"
               onClick={onVerify}
-              className="self-start rounded-full bg-emerald-500 px-5 py-2 text-sm font-semibold text-black shadow-lg active:scale-95"
+              className="flex items-center justify-center rounded-full bg-white text-[14px] font-semibold text-black shadow-lg transition-colors hover:bg-white/90 active:scale-[0.98]"
+              style={{ height: 48 }}
             >
               Verify against radar
             </button>
-            <p className="text-[10px] text-white/30">~10–60s · uses Reconciliation CMA</p>
+            <p className="text-center text-[11px] text-white/35">~10–60s · uses Reconciliation CMA</p>
           </>
         )}
 
         {!hasClassification && !verifyRequested && (
-          <p className="text-white/60 text-xs">Waiting for the photo classifier to land before you can verify.</p>
+          <p className="text-[13px] text-white/60">Waiting for the photo classifier to land before you can verify.</p>
         )}
 
         {verifying && (
-          <div className="flex items-center gap-3 text-white/70">
-            <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
+          <div className="flex items-center gap-2.5 text-[14px] text-white/70">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
             <span>Reconciling photo against radar + Open-Meteo + MTG…</span>
           </div>
         )}
 
         {earningLedger && (
-          <div className="flex flex-col gap-2 text-white/70">
-            <div className="flex items-center gap-3">
-              <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center gap-2.5 text-[14px] text-white/70">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
               <span>Match verified — earning your question.</span>
             </div>
             <button
               type="button"
               onClick={() => location.reload()}
-              className="self-start rounded-full bg-white/10 px-3 py-1 text-[11px] font-medium text-white/70 active:scale-95"
+              className="self-start rounded-full border border-white/10 bg-white/[0.08] px-3.5 py-1.5 text-[11px] font-medium text-white/75 backdrop-blur-xl transition-colors hover:bg-white/[0.14] active:scale-95"
             >
               Stuck? Refresh
             </button>
@@ -901,12 +975,13 @@ function QuestionCard({
 
         {verdictNotMatched && (
           <>
-            <p className="text-white/80">
-              Reconciliation came back <strong>{verified.verdict}</strong>. The photo and the weather signal didn't line up clearly enough to grant a question. A clearer sky shot from outdoors usually does it.
+            <p className="text-[14px] leading-relaxed text-white/80">
+              Reconciliation came back <strong className="font-semibold text-white">{verified.verdict}</strong>. The photo and the weather signal didn't line up clearly enough to grant a question. A clearer sky shot from outdoors usually does it.
             </p>
             <Link
               to="/capture"
-              className="self-start rounded-full bg-emerald-500 px-4 py-2 text-xs font-semibold text-black active:scale-95"
+              className="flex items-center justify-center rounded-full bg-white text-[14px] font-semibold text-black shadow-lg transition-colors hover:bg-white/90 active:scale-[0.98]"
+              style={{ height: 48 }}
             >
               Take another sky photo
             </Link>
@@ -915,11 +990,11 @@ function QuestionCard({
 
         {verifyError && (
           <>
-            <p className="text-amber-200 text-xs">{verifyError}</p>
+            <p className="text-[12.5px] leading-relaxed text-amber-200">{verifyError}</p>
             <button
               type="button"
               onClick={onVerify}
-              className="self-start rounded-full bg-white/10 px-4 py-2 text-xs font-medium text-white/90 active:scale-95"
+              className="self-start rounded-full border border-white/10 bg-white/[0.08] px-4 py-1.5 text-[12px] font-medium text-white/85 backdrop-blur-xl transition-colors hover:bg-white/[0.14] active:scale-95"
             >
               Try again
             </button>
@@ -930,11 +1005,11 @@ function QuestionCard({
   }
 
   return (
-    <section className="flex flex-col gap-3 rounded-lg border border-white/10 bg-white/5 p-4 text-sm">
-      <div className="flex items-center justify-between">
-        <p className="text-white/50 text-xs uppercase tracking-wider">Ask a question</p>
+    <section className="flex flex-col gap-3 rounded-3xl bg-gradient-to-b from-white/[0.06] to-white/[0.02] p-5 ring-1 ring-white/[0.06]">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[13px] font-medium text-white/65">Ask a question</p>
         {!ungated && (
-          <span className="text-[10px] uppercase tracking-wider text-white/40">
+          <span className="text-[11px] font-medium text-white/45">
             {questionsAvailable} {questionsAvailable === 1 ? "question" : "questions"} left
           </span>
         )}
@@ -945,7 +1020,7 @@ function QuestionCard({
         placeholder="e.g. Where in Munich is best for an outdoor lunch in the next 2 hours?"
         rows={3}
         maxLength={500}
-        className="w-full resize-none rounded-md border border-white/10 bg-black/40 p-3 text-sm text-white/90 placeholder:text-white/30 focus:border-sky-400/50 focus:outline-none"
+        className="w-full resize-none rounded-2xl bg-black/30 p-3.5 text-[14px] text-white/90 ring-1 ring-white/[0.06] placeholder:text-white/30 focus:outline-none focus:ring-white/20"
       />
       <div className="flex items-center justify-between">
         <span className="text-[10px] text-white/30">{askText.length}/500</span>
@@ -953,12 +1028,12 @@ function QuestionCard({
           type="button"
           onClick={onSubmit}
           disabled={!askText.trim()}
-          className="rounded-full bg-sky-500/20 px-4 py-2 text-xs font-medium text-sky-100 ring-1 ring-sky-500/30 active:scale-95 disabled:opacity-40"
+          className="rounded-full bg-white px-5 py-2 text-[13px] font-semibold text-black shadow-lg transition-opacity hover:bg-white/90 active:scale-[0.98] disabled:bg-white/15 disabled:text-white/40 disabled:shadow-none"
         >
           Ask
         </button>
       </div>
-      {error && <p className="text-xs text-amber-300">{error}</p>}
+      {error && <p className="text-[12px] text-amber-300">{error}</p>}
     </section>
   );
 }
@@ -966,17 +1041,17 @@ function QuestionCard({
 function SourcesRow({ sources }: { sources: BriefSource[] | null }) {
   if (!sources || sources.length === 0) return null;
   const tone: Record<BriefSource["kind"], string> = {
-    weather: "bg-sky-500/15 text-sky-200 border-sky-500/30",
-    community: "bg-emerald-500/15 text-emerald-200 border-emerald-500/30",
-    satellite: "bg-violet-500/15 text-violet-200 border-violet-500/30",
-    radar: "bg-amber-500/15 text-amber-200 border-amber-500/30",
+    weather: "bg-sky-500/15 text-sky-200 ring-sky-500/25",
+    community: "bg-emerald-500/15 text-emerald-200 ring-emerald-500/25",
+    satellite: "bg-violet-500/15 text-violet-200 ring-violet-500/25",
+    radar: "bg-amber-500/15 text-amber-200 ring-amber-500/25",
   };
   return (
-    <div className="mt-3 flex flex-wrap gap-1.5 border-t border-white/5 pt-3">
+    <div className="mt-4 flex flex-wrap gap-1.5 border-t border-white/[0.06] pt-3">
       {sources.map((s, i) => (
         <span
           key={`${s.label}-${i}`}
-          className={`rounded-full border px-2 py-0.5 text-[10px] ${tone[s.kind] ?? "bg-white/5 text-white/60 border-white/10"}`}
+          className={`rounded-full px-2.5 py-0.5 text-[10px] font-medium ring-1 ${tone[s.kind] ?? "bg-white/[0.06] text-white/60 ring-white/10"}`}
           title={s.ref}
         >
           {s.label}
@@ -991,9 +1066,97 @@ function CostFooter({ stats, label }: { stats: SessionStats | null; label: strin
   const cost = stats.cost_usd != null ? `$${stats.cost_usd.toFixed(4)}` : "—";
   const duration = stats.duration_ms != null ? `${(stats.duration_ms / 1000).toFixed(1)}s` : "—";
   return (
-    <p className="mt-3 border-t border-white/5 pt-2 font-mono text-[10px] text-white/30">
+    <p className="mt-4 border-t border-white/[0.06] pt-3 font-mono text-[10px] text-white/30">
       {label} · {stats.model} · {cost} · {duration} · {stats.session_id.slice(0, 12)}…
     </p>
+  );
+}
+
+function MetaCard({
+  heading,
+  cardinal,
+  lat,
+  lon,
+  capturedAt,
+  caption,
+}: {
+  heading: number;
+  cardinal: string;
+  lat: number;
+  lon: number;
+  capturedAt: string;
+  caption: string | null;
+}) {
+  return (
+    <section className="rounded-3xl bg-white/[0.04] p-5 ring-1 ring-white/[0.06]">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/40">
+        Capture details
+      </p>
+      <dl className="mt-4 space-y-3.5 text-[14px]">
+        <MetaRow label="Heading">
+          <span className="tabular-nums text-white/90">{heading}°</span>
+          <span className="text-white/45"> · facing {cardinal}</span>
+        </MetaRow>
+        <MetaRow label="Location">
+          <span className="tabular-nums text-white/90">
+            {lat.toFixed(5)}, {lon.toFixed(5)}
+          </span>
+        </MetaRow>
+        <MetaRow label="Captured">
+          <span className="text-white/90">{new Date(capturedAt).toLocaleString()}</span>
+        </MetaRow>
+        {caption && (
+          <MetaRow label="Caption">
+            <span className="text-white/90">{caption}</span>
+          </MetaRow>
+        )}
+      </dl>
+    </section>
+  );
+}
+
+function MetaRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <dt className="text-[11px] font-medium uppercase tracking-wider text-white/40">{label}</dt>
+      <dd className="mt-0.5 text-[14px] leading-snug">{children}</dd>
+    </div>
+  );
+}
+
+function BackIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M15 18l-6-6 6-6" />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M6 6l12 12M18 6L6 18" />
+    </svg>
   );
 }
 
