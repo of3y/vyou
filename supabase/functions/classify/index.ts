@@ -187,12 +187,16 @@ async function handle(req: Request): Promise<Response> {
 
 // deno-lint-ignore no-explicit-any
 async function upsertClassification(fields: Record<string, any>): Promise<any> {
+  // Unique constraint on (report_id, agent) lands in 20260426091500. The
+  // pre-check at handle()-top still avoids the paid session for the warm
+  // case; this upsert is the durable guard against the cold-race where two
+  // invokes both pass the pre-check.
   const { data, error } = await supabase
     .from("classifications")
-    .insert(fields)
+    .upsert(fields, { onConflict: "report_id,agent" })
     .select("id, phenomenon, features, confidence, hail_size_cm, session_stats")
     .single();
-  if (error) throw new Error(`classifications insert: ${error.message}`);
+  if (error) throw new Error(`classifications upsert: ${error.message}`);
   return data;
 }
 
