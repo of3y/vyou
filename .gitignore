@@ -17,6 +17,9 @@ supabase/.branches/
 # Personal execution checklist (HTML dashboard, Daniel's local pane)
 execution-checklist.html
 
+# Tester-cohort invite roster (raw tokens + per-tester share links)
+tester-invites.md
+
 # Obsidian personal pane/cursor state — constantly churns, not shared
 docs/.obsidian/workspace.json
 docs/.obsidian/workspace-mobile.json
