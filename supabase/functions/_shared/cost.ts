@@ -56,6 +56,12 @@ export function costUsd(model: string, usage: Usage | null | undefined): number 
 // Build the persisted session_stats blob. `timed_out` is recorded alongside
 // the cost receipt so eval/ops queries can separate timeout cost from
 // successful-run cost.
+//
+// Optional observability fields (events_count, elapsed_ms, stop_reason,
+// transcript_chars, feeds) are passed through when the caller measured them,
+// so a row's session_stats becomes the per-invocation paper trail without
+// any schema change — session_stats is already jsonb on classifications,
+// verified_reports, and briefs.
 export function buildSessionStats(args: {
   session_id: string;
   agent_id: string;
@@ -65,6 +71,11 @@ export function buildSessionStats(args: {
   usage: Usage | null | undefined;
   stats?: { duration_seconds?: number } | null | undefined;
   timed_out?: boolean;
+  events_count?: number;
+  elapsed_ms?: number;
+  stop_reason?: string | null;
+  transcript_chars?: number;
+  feeds?: Record<string, boolean | number | string | null>;
 }): Record<string, unknown> {
   const duration_ms = args.stats?.duration_seconds != null
     ? Math.round(args.stats.duration_seconds * 1000)
@@ -76,6 +87,11 @@ export function buildSessionStats(args: {
     skill_version: args.skill_version ?? null,
     model: args.model,
     duration_ms,
+    elapsed_ms: args.elapsed_ms ?? null,
+    events_count: args.events_count ?? null,
+    stop_reason: args.stop_reason ?? null,
+    transcript_chars: args.transcript_chars ?? null,
+    feeds: args.feeds ?? null,
     usage: args.usage ?? null,
     cost_usd: costUsd(args.model, args.usage),
     timed_out: args.timed_out ?? false,

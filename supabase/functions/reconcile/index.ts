@@ -267,6 +267,13 @@ Reconcile per the output contract.`,
     anthropic.beta.sessions.archive(session.id).catch((e) => console.warn(`[reconcile] archive failed ${session.id}:`, e?.message));
   }
 
+  const elapsedMs = Date.now() - startedAt;
+  const feeds = {
+    radar: radarImageBase64 !== null,
+    open_meteo: openMeteo !== null,
+    mtg_ir: mtgIr.fetched,
+    mtg_li: mtgLi.fetched,
+  };
   const sessionStats = buildSessionStats({
     session_id: session.id,
     agent_id: RECONCILIATION_AGENT_ID!,
@@ -276,7 +283,15 @@ Reconcile per the output contract.`,
     usage: finalUsage,
     stats: finalStats,
     timed_out: timedOut,
+    events_count: eventCount,
+    elapsed_ms: elapsedMs,
+    stop_reason: stopReason ?? null,
+    transcript_chars: transcript.length,
+    feeds,
   });
+  console.log(
+    `[reconcile] session=${session.id} elapsed_ms=${elapsedMs} events=${eventCount} stop=${stopReason ?? "n/a"} transcript_chars=${transcript.length} timed_out=${timedOut} feeds=${JSON.stringify(feeds)}`,
+  );
 
   // Timeout path: persist a row with session_stats so cost receipts are not
   // lost for the costliest runs. Verdict is `inconclusive` with a marker

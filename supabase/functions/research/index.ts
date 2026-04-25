@@ -240,6 +240,13 @@ async function handle(req: Request): Promise<Response> {
     anthropic.beta.sessions.archive(session.id).catch((e) => console.warn(`[research] archive failed ${session.id}:`, e?.message));
   }
 
+  const elapsedMs = Date.now() - startedAt;
+  const feeds = {
+    open_meteo: openMeteo !== null,
+    nearby_count: nearby.length,
+    has_classification: classification !== null,
+    has_verified: verified !== null,
+  };
   const sessionStats = buildSessionStats({
     session_id: session.id,
     agent_id: DEEP_RESEARCHER_AGENT_ID!,
@@ -249,7 +256,15 @@ async function handle(req: Request): Promise<Response> {
     usage: finalUsage,
     stats: finalStats,
     timed_out: timedOut,
+    events_count: eventCount,
+    elapsed_ms: elapsedMs,
+    stop_reason: stopReason ?? null,
+    transcript_chars: transcript.length,
+    feeds,
   });
+  console.log(
+    `[research] session=${session.id} elapsed_ms=${elapsedMs} events=${eventCount} stop=${stopReason ?? "n/a"} transcript_chars=${transcript.length} timed_out=${timedOut} feeds=${JSON.stringify(feeds)}`,
+  );
 
   if (timedOut) {
     return jsonResponse({ error: "research timed out", session_id: session.id, session_stats: sessionStats }, 504);
