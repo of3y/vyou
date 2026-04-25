@@ -41,11 +41,10 @@ export async function requireInvite(
   if (data.expires_at && new Date(data.expires_at) < new Date()) {
     return { ok: false, status: 403, error: "invite expired" };
   }
-  if (data.used >= data.max_uses) {
-    return { ok: false, status: 429, error: "invite exhausted" };
-  }
-
   if (opts.countAsUse) {
+    if (data.used >= data.max_uses) {
+      return { ok: false, status: 429, error: "invite exhausted" };
+    }
     await supabase
       .from("invites")
       .update({ used: data.used + 1 })

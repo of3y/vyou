@@ -164,17 +164,11 @@ async function handle(req: Request): Promise<Response> {
   const queryLon = typeof user_lon === "number" ? user_lon : report.lon;
   const openMeteo = await fetchOpenMeteo({ lat: queryLat, lon: queryLon, forecast_hours: 2 });
 
-  const sessionResources = DEEP_RESEARCHER_PLANNER_SKILL_ID
-    ? [{ type: "skill", skill_id: DEEP_RESEARCHER_PLANNER_SKILL_ID, version: DEEP_RESEARCHER_PLANNER_SKILL_VERSION ?? "latest" }]
-    : undefined;
-  // deno-lint-ignore no-explicit-any
-  const sessionCreate: any = {
+  const session = await anthropic.beta.sessions.create({
     agent: DEEP_RESEARCHER_AGENT_ID!,
     environment_id: DEEP_RESEARCHER_ENVIRONMENT_ID!,
     title: `research ${report_id.slice(0, 8)}`,
-  };
-  if (sessionResources) sessionCreate.resources = sessionResources;
-  const session = await anthropic.beta.sessions.create(sessionCreate);
+  });
   console.log(`[research] session ${session.id} for report ${report_id}`);
 
   const stream = await anthropic.beta.sessions.events.stream(session.id);
