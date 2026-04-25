@@ -103,6 +103,14 @@ export default function ConeDetailDrawer({ reportId, onClose }: Props) {
               <Drawer.Handle
                 className="!h-1 !w-10 !rounded-full !bg-white/20"
               />
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close"
+                className="absolute right-3 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/[0.08] text-white/70 backdrop-blur-xl transition-colors hover:bg-white/[0.14] hover:text-white active:scale-[0.95]"
+              >
+                <CloseIcon />
+              </button>
             </div>
             <div
               className="px-6 pt-2"
@@ -269,6 +277,24 @@ function VerificationRow({ verified }: { verified: VerifiedReport }) {
         )}
       </div>
     </section>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M6 6l12 12M18 6L6 18" />
+    </svg>
   );
 }
 
