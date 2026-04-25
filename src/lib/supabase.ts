@@ -12,3 +12,5 @@ if (!url || !anonKey) {
 export const supabase = createClient(url ?? "http://localhost:54321", anonKey ?? "dev-anon-key", {
   auth: { persistSession: false },
 });
+
+export const supabaseFunctionsUrl = `${(url ?? "http://localhost:54321").replace(/\/$/, "")}/functions/v1`;

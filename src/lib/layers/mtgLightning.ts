@@ -1,17 +1,13 @@
 import type maplibregl from "maplibre-gl";
 import type { LayerTime } from "./dwdRadar";
-
-const EUMETVIEW_BASE =
-  "https://view.eumetsat.int/geoserver/wms?service=WMS&request=GetMap" +
-  "&format=image/png&transparent=true&version=1.1.1&srs=EPSG:3857" +
-  "&bbox={bbox-epsg-3857}&width=256&height=256&layers=mtg_fd:li_afa&styles=";
+import { supabaseFunctionsUrl } from "../supabase";
 
 const MTG_LIGHTNING_BUCKET_MS = 5 * 60 * 1000;
 
 export function mtgLightningTileUrl(time: LayerTime): string {
   const t = time === "live" ? new Date() : time;
   const bucket = floorToBucket(t, MTG_LIGHTNING_BUCKET_MS);
-  return `${EUMETVIEW_BASE}&time=${bucket.toISOString()}`;
+  return `${supabaseFunctionsUrl}/mtg-tile/lightning/{z}/{x}/{y}.png?t=${bucket.toISOString()}`;
 }
 
 export function mtgLightningSource(
@@ -20,7 +16,8 @@ export function mtgLightningSource(
   return {
     type: "raster",
     tiles: [mtgLightningTileUrl(time)],
-    tileSize: 256,
+    tileSize: 512,
+    maxzoom: 4,
     attribution: "© EUMETSAT — MTG LI Accumulated Flash Area",
   };
 }

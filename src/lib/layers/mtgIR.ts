@@ -1,24 +1,25 @@
 import type maplibregl from "maplibre-gl";
 import type { LayerTime } from "./dwdRadar";
+import { supabaseFunctionsUrl } from "../supabase";
 
-const EUMETVIEW_BASE =
-  "https://view.eumetsat.int/geoserver/wms?service=WMS&request=GetMap" +
-  "&format=image/png&transparent=true&version=1.1.1&srs=EPSG:3857" +
-  "&bbox={bbox-epsg-3857}&width=256&height=256&layers=mtg_fd:ir105_hrfi&styles=";
+// Tiles are served by the mtg-tile edge function, which caches each tile in
+// the public mtg-tiles storage bucket. URL is content-addressed by the time
+// bucket so browser + CDN caches dedupe across viewers and pans.
 
 const MTG_IR_BUCKET_MS = 10 * 60 * 1000;
 
 export function mtgIRTileUrl(time: LayerTime): string {
   const t = time === "live" ? new Date() : time;
   const bucket = floorToBucket(t, MTG_IR_BUCKET_MS);
-  return `${EUMETVIEW_BASE}&time=${bucket.toISOString()}`;
+  return `${supabaseFunctionsUrl}/mtg-tile/ir/{z}/{x}/{y}.png?t=${bucket.toISOString()}`;
 }
 
 export function mtgIRSource(time: LayerTime): maplibregl.RasterSourceSpecification {
   return {
     type: "raster",
     tiles: [mtgIRTileUrl(time)],
-    tileSize: 256,
+    tileSize: 512,
+    maxzoom: 5,
     attribution: "© EUMETSAT — MTG FCI IR 10.5µm",
   };
 }

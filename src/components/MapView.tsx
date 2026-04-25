@@ -184,6 +184,16 @@ export default function MapView({
     );
     map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-left");
 
+    map.on("error", (e) => {
+      const url = (e?.error as { url?: string } | undefined)?.url ?? "";
+      // mtg-tile proxy returns a fallback PNG on upstream miss, so most
+      // errors here are noise. Keep filtering raw EUMETView in case a
+      // future layer is wired direct.
+      if (url.includes("/functions/v1/mtg-tile/")) return;
+      if (url.includes("view.eumetsat.int/geoserver/wms")) return;
+      console.error(e?.error ?? e);
+    });
+
     map.on("load", async () => {
       map.addSource(CONE_SOURCE_ID, {
         type: "geojson",

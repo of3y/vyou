@@ -1,0 +1,7 @@
+# Project-level Supabase config. Currently only used to opt the public tile
+# proxy out of JWT verification — MapLibre's raster source does not attach
+# auth headers, and map tiles are inherently public resources. All other
+# functions inherit the default verify_jwt = true.
+
+[functions.mtg-tile]
+verify_jwt = false
