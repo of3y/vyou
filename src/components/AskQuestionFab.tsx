@@ -46,6 +46,10 @@ export default function AskQuestionFab({ reportId, questionsAvailable, onAnswere
   const submit = useCallback(async () => {
     const q = askText.trim();
     if (!q || !reportId) return;
+    // Capture into a local const so the narrowing survives the nested poll()
+    // declaration — TS widens prop captures back to (string | null) inside
+    // function declarations across an await boundary.
+    const rid: string = reportId;
     setError(null);
     setPending(true);
     setBrief(null);
@@ -114,7 +118,7 @@ export default function AskQuestionFab({ reportId, questionsAvailable, onAnswere
     const startedAt = Date.now();
     async function poll() {
       if (respondedSync || cancelRef.current) return;
-      const { data } = await getReport(reportId, reporterId);
+      const { data } = await getReport(rid, reporterId);
       const fresh = data?.brief;
       if (fresh) {
         if (cancelRef.current) return;
