@@ -23,3 +23,4 @@ docs/.obsidian/workspace-mobile.json
 
 # Claude Code scheduled-task lock (local runtime state)
 .claude/scheduled_tasks.lock
+.vercel
