@@ -48,7 +48,7 @@ export type LayerVisibility = {
 const DEFAULT_VISIBILITY: LayerVisibility = {
   cones: true,
   radar: true,
-  lightning: true,
+  lightning: false,
   ir: false,
 };
 
