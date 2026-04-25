@@ -46,38 +46,29 @@ async function handle(req: Request): Promise<Response> {
   if (!invite.ok) return jsonResponse({ error: invite.error }, invite.status);
 
   let classification_id: string | undefined;
-  let force = false;
   try {
     const body = await req.json();
     classification_id = body.classification_id;
-    force = body.force === true;
   } catch {
     return jsonResponse({ error: "invalid JSON body" }, 400);
   }
   if (!classification_id) return jsonResponse({ error: "classification_id required" }, 400);
 
-  if (force) {
-    // Force-re-run drops the cached row so the unique constraint on
-    // verified_reports(classification_id) does not block the fresh insert.
-    // Anon cannot delete (no RLS policy); the service-role client does it
-    // here, gated by the invite-auth cost check above.
-    const { error: delErr } = await supabase
-      .from("verified_reports")
-      .delete()
-      .eq("classification_id", classification_id);
-    if (delErr) return jsonResponse({ error: `force-delete: ${delErr.message}` }, 500);
-  } else {
-    // Idempotency short-circuit: if a verdict already exists, return it.
-    // The unique constraint on verified_reports(classification_id) is the
-    // durable guard; this pre-check avoids opening a paid session unnecessarily.
-    const { data: existing } = await supabase
-      .from("verified_reports")
-      .select("*")
-      .eq("classification_id", classification_id)
-      .maybeSingle();
-    if (existing) {
-      return jsonResponse({ verified_report: existing, cached: true });
-    }
+  // Idempotency short-circuit: if a verdict already exists, return it.
+  // The unique constraint on verified_reports(classification_id) is the
+  // durable guard; this pre-check avoids opening a paid session unnecessarily.
+  // Force-re-run was previously available via `force: true` but has been
+  // removed from the public surface — any client (including the cohort
+  // /reports view) sending force now hits this cache path and gets the
+  // existing row back. Re-runs are an admin operation; do them with the
+  // service-role key from a script, not from the browser.
+  const { data: existing } = await supabase
+    .from("verified_reports")
+    .select("*")
+    .eq("classification_id", classification_id)
+    .maybeSingle();
+  if (existing) {
+    return jsonResponse({ verified_report: existing, cached: true });
   }
 
   const { data: classification, error: clsErr } = await supabase

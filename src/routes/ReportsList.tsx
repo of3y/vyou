@@ -59,8 +59,11 @@ export default function ReportsList() {
     const cid = row.classification.id;
     setBusyFor(cid);
     try {
+      // Server no longer honors `force` — this hits the cached-row path.
+      // The button now refreshes the verdict from the server's truth, which
+      // is the correct user-facing semantic anyway.
       const { error } = await supabase.functions.invoke("reconcile", {
-        body: { classification_id: cid, force: true },
+        body: { classification_id: cid },
         headers: inviteHeaders(),
       });
       // Same iOS-Safari tolerance as ReportDetail: FunctionsFetchError

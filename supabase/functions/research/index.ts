@@ -88,30 +88,31 @@ async function handle(req: Request): Promise<Response> {
     .limit(1)
     .maybeSingle();
 
-  // Earn-a-Question gate: only enforce when the profiles table exists AND the
-  // caller passed a reporter_id. If profiles isn't migrated yet, the function
-  // skips the gate so the UI can still demo end-to-end.
+  // Earn-a-Question gate. reporter_id is mandatory — without it there's no
+  // ledger to debit and a paid Anthropic session would open ungated. The
+  // earlier ungated branch was a hackathon-day-1 affordance; once the
+  // profiles table is in place (it is on prod), there's no legitimate
+  // reason for the client to omit reporter_id.
+  if (!reporter_id) {
+    return jsonResponse({ error: "reporter_id required" }, 400);
+  }
   let ledgerUsable = false;
-  let questionsAvailable = 0;
-  if (reporter_id) {
-    const { data: profile, error: profileErr } = await supabase
-      .from("profiles")
-      .select("questions_earned, questions_used")
-      .eq("reporter_id", reporter_id)
-      .maybeSingle();
-    if (!profileErr) {
-      ledgerUsable = true;
-      if (profile) {
-        questionsAvailable = (profile.questions_earned ?? 0) - (profile.questions_used ?? 0);
-        if (questionsAvailable <= 0) {
-          return jsonResponse({ error: "no questions available — verify a report to earn one" }, 402);
-        }
-      } else {
-        return jsonResponse({ error: "no questions available — verify a report to earn one" }, 402);
-      }
-    } else {
-      console.warn("[research] profiles read failed; running ungated", profileErr.message);
-    }
+  const { data: profile, error: profileErr } = await supabase
+    .from("profiles")
+    .select("questions_earned, questions_used")
+    .eq("reporter_id", reporter_id)
+    .maybeSingle();
+  if (profileErr) {
+    console.error("[research] profiles read failed; refusing to run ungated", profileErr.message);
+    return jsonResponse({ error: "ledger unavailable" }, 503);
+  }
+  ledgerUsable = true;
+  if (!profile) {
+    return jsonResponse({ error: "no questions available — verify a report to earn one" }, 402);
+  }
+  const questionsAvailable = (profile.questions_earned ?? 0) - (profile.questions_used ?? 0);
+  if (questionsAvailable <= 0) {
+    return jsonResponse({ error: "no questions available — verify a report to earn one" }, 402);
   }
 
   // Nearby verified reports — last 24h, ~5 km radius. We pull more rows than
@@ -289,7 +290,7 @@ async function handle(req: Request): Promise<Response> {
     session_stats: sessionStats,
   });
 
-  if (ledgerUsable && reporter_id) {
+  if (ledgerUsable) {
     // Re-read current questions_used and bump by 1. Race-tolerable at cohort
     // scale; the Supabase REST surface has no atomic increment.
     const { data: cur } = await supabase
