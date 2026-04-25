@@ -29,6 +29,7 @@ export const mtgLightningLayer: maplibregl.RasterLayerSpecification = {
   id: MTG_LIGHTNING_LAYER_ID,
   type: "raster",
   source: MTG_LIGHTNING_SOURCE_ID,
+  layout: { visibility: "none" },
   paint: { "raster-opacity": 0.8 },
 };
 
