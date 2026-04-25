@@ -61,6 +61,7 @@ type Props = {
   currentTime?: LayerTime;
   layerVisibility?: LayerVisibility;
   onConeClick?: (reportId: string) => void;
+  onBackgroundClick?: () => void;
   activeReportId?: string | null;
   windowMs?: number;
 };
@@ -131,12 +132,15 @@ export default function MapView({
   currentTime,
   layerVisibility,
   onConeClick,
+  onBackgroundClick,
   activeReportId,
   windowMs,
 }: Props) {
   const effectiveWindowMs = windowMs ?? DEFAULT_WINDOW_MS;
   const onConeClickRef = useRef(onConeClick);
   onConeClickRef.current = onConeClick;
+  const onBackgroundClickRef = useRef(onBackgroundClick);
+  onBackgroundClickRef.current = onBackgroundClick;
   const activeFidRef = useRef<string | number | null>(null);
   const setActiveRef = useRef<((fid: string | number | null) => void) | null>(null);
   const dimmedFidsRef = useRef<Set<string | number>>(new Set());
@@ -367,6 +371,10 @@ export default function MapView({
         onConeClickRef.current?.(id);
       };
       map.on("click", CONE_FILL_LAYER_ID, handleConeClick);
+      map.on("click", (e) => {
+        const hits = map.queryRenderedFeatures(e.point, { layers: [CONE_FILL_LAYER_ID] });
+        if (hits.length === 0) onBackgroundClickRef.current?.();
+      });
       map.on("mousemove", CONE_FILL_LAYER_ID, (e) => {
         map.getCanvas().style.cursor = "pointer";
         const fid = e.features?.[0]?.id;

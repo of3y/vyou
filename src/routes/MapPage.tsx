@@ -80,6 +80,7 @@ export default function MapPage() {
         currentTime={currentTime}
         layerVisibility={visibility}
         onConeClick={setActiveConeId}
+        onBackgroundClick={() => setActiveConeId(null)}
         activeReportId={activeConeId}
         windowMs={WINDOW_MS[windowKey]}
       />
