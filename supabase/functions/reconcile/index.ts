@@ -3,6 +3,7 @@ import Anthropic from "npm:@anthropic-ai/sdk@0.91.0";
 import { buildSessionStats, RECONCILIATION_MODEL } from "../_shared/cost.ts";
 import { radolanFrameForReport } from "../_shared/radolan.ts";
 import { requireInvite } from "../_shared/invite.ts";
+import { fetchMtgFrame, fetchOpenMeteo, openMeteoSummary } from "../_shared/feeds.ts";
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
@@ -125,6 +126,24 @@ async function handle(req: Request): Promise<Response> {
     confidence: classification.confidence,
   };
 
+  // Fetch the auxiliary feeds in parallel; any failure degrades to a
+  // "feed unavailable" line in the prompt rather than blocking the verdict.
+  const [openMeteo, mtgIr, mtgLi] = await Promise.all([
+    fetchOpenMeteo({ lat: report.lat, lon: report.lon }),
+    fetchMtgFrame({
+      lat: report.lat,
+      lon: report.lon,
+      captured_at: report.captured_at,
+      layer: "mtg_fd:ir105_hrfi",
+    }),
+    fetchMtgFrame({
+      lat: report.lat,
+      lon: report.lon,
+      captured_at: report.captured_at,
+      layer: "mtg_fd:li_afa",
+    }),
+  ]);
+
   const session = await anthropic.beta.sessions.create({
     agent: RECONCILIATION_AGENT_ID!,
     environment_id: RECONCILIATION_ENVIRONMENT_ID!,
@@ -137,21 +156,55 @@ async function handle(req: Request): Promise<Response> {
   const userContent: any[] = [
     { type: "image", source: { type: "url", url: report.photo_url } },
   ];
+  const imageLabels: string[] = ["image 1: community photo"];
   if (radarImageBase64) {
     userContent.push({
       type: "image",
       source: { type: "base64", media_type: "image/png", data: radarImageBase64 },
     });
+    imageLabels.push(`image ${imageLabels.length + 1}: DWD RADOLAN frame (${radar.frame_time_iso})`);
   }
+  if (mtgIr.fetched && mtgIr.base64) {
+    userContent.push({
+      type: "image",
+      source: { type: "base64", media_type: "image/png", data: mtgIr.base64 },
+    });
+    imageLabels.push(`image ${imageLabels.length + 1}: MTG FCI IR 10.5 µm (${mtgIr.time})`);
+  }
+  if (mtgLi.fetched && mtgLi.base64) {
+    userContent.push({
+      type: "image",
+      source: { type: "base64", media_type: "image/png", data: mtgLi.base64 },
+    });
+    imageLabels.push(`image ${imageLabels.length + 1}: MTG Lightning Imager Accumulated Flash Area (${mtgLi.time})`);
+  }
+
+  const evidenceLines: string[] = [];
+  evidenceLines.push(openMeteoSummary(openMeteo));
+  evidenceLines.push(
+    mtgIr.fetched
+      ? `MTG FCI IR 10.5 µm tile attached as image (frame time ${mtgIr.time}).`
+      : `MTG FCI IR 10.5 µm: feed unavailable (${mtgIr.error ?? "unknown"}).`,
+  );
+  evidenceLines.push(
+    mtgLi.fetched
+      ? `MTG Lightning Imager Accumulated Flash Area tile attached as image (frame time ${mtgLi.time}).`
+      : `MTG Lightning Imager Accumulated Flash Area: feed unavailable (${mtgLi.error ?? "unknown"}).`,
+  );
+
   userContent.push({
     type: "text",
-    text: `Community photo (image 1) ${radarImageBase64 ? "and DWD RADOLAN frame (image 2) " : ""}for the same report.${radarImageBase64 ? "" : "\n\nNote: the DWD radar frame could not be fetched server-side; reconcile based on the classifier record alone, defaulting to inconclusive when radar evidence is required."}
-
+    text: `Attached images:
+${imageLabels.map((l) => `- ${l}`).join("\n")}
+${radarImageBase64 ? "" : "\nNote: the DWD radar frame could not be fetched server-side; reconcile based on the classifier record alone, defaulting to inconclusive when radar evidence is required.\n"}
 Report metadata:
 - location: ${report.lat.toFixed(4)}, ${report.lon.toFixed(4)}
 - heading: ${Math.round(report.heading_degrees)}°
 - captured_at: ${report.captured_at}
 - radar frame time: ${radar.frame_time_iso}
+
+Auxiliary evidence (do not block on missing feeds):
+${evidenceLines.join("\n\n")}
 
 Classifier record:
 ${JSON.stringify(classifierRecord, null, 2)}

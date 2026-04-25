@@ -50,3 +50,28 @@ export type VerifiedReport = {
   session_stats: SessionStats | null;
   created_at: string;
 };
+
+export type BriefSourceKind = "weather" | "community" | "satellite" | "radar";
+
+export type BriefSource = {
+  label: string;
+  kind: BriefSourceKind;
+  ref: string;
+};
+
+export type Brief = {
+  id: string;
+  report_id: string;
+  verified_report_id: string | null;
+  question: string;
+  content: string;
+  sources: BriefSource[] | null;
+  session_stats?: SessionStats | null;
+  created_at: string;
+};
+
+export type EarnedQuestion = {
+  reporter_id: string;
+  questions_earned: number;
+  questions_used: number;
+};

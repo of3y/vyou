@@ -1,14 +1,16 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import MapView from "../components/MapView";
-import type { Classification, Confidence, Report, SessionStats, VerifiedReport } from "../lib/types";
+import type { Brief, BriefSource, Classification, Confidence, EarnedQuestion, Report, SessionStats, VerifiedReport } from "../lib/types";
 import { inviteHeaders } from "../lib/invite";
 import { prettyPhenomenon } from "../lib/format";
+import { getReporterId } from "../lib/reporter";
 
 const POLL_INTERVAL_MS = 2500;
 const CLASSIFY_POLL_TIMEOUT_MS = 90_000;
 const RECONCILE_POLL_TIMEOUT_MS = 180_000;
+const RESEARCH_POLL_TIMEOUT_MS = 60_000;
 
 // Module-scoped: survives component remount within the same browser session,
 // keyed by classification id. Server-side idempotency is the durable guard.
@@ -18,6 +20,12 @@ const classifyDispatchSet = new Set<string>();
 const DEV_DEBUG =
   import.meta.env.DEV ||
   (typeof window !== "undefined" && new URLSearchParams(window.location.search).has("debug"));
+
+// `?debug=1` (or any presence of the `debug` flag) flips the Reconciliation
+// card from hidden to visible. The debug flag is also what shows the cost
+// footer; keeping the same flag for both keeps the URL hygiene tidy.
+const SHOW_DEBUG =
+  typeof window !== "undefined" && new URLSearchParams(window.location.search).has("debug");
 
 export default function ReportDetail() {
   const { id } = useParams<{ id: string }>();
@@ -208,6 +216,164 @@ export default function ReportDetail() {
     setVerifyRequested(true);
   }
 
+  // ---------------- Earn-a-Question + Ask wiring ----------------
+  const [profile, setProfile] = useState<EarnedQuestion | null>(null);
+  const [profileMissing, setProfileMissing] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const lastEarnedRef = useRef<number | null>(null);
+
+  // Poll the local profile row to detect questions_earned increments. Cheap:
+  // single-row select keyed on the local reporter_id, every few seconds while
+  // the page is open. The trigger fires server-side on the verified_reports
+  // insert; this is just the change-detector for the toast.
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const reporterId = getReporterId();
+
+    async function tick() {
+      if (cancelled) return;
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("reporter_id, questions_earned, questions_used")
+        .eq("reporter_id", reporterId)
+        .maybeSingle();
+      if (cancelled) return;
+      if (error) {
+        // Most common failure here is the migration not yet applied. Fall
+        // back to the always-allow path described in the brief.
+        setProfileMissing(true);
+        return;
+      }
+      const next: EarnedQuestion = data
+        ? (data as EarnedQuestion)
+        : { reporter_id: reporterId, questions_earned: 0, questions_used: 0 };
+      setProfile((prev) => {
+        const prevEarned = lastEarnedRef.current ?? prev?.questions_earned ?? next.questions_earned;
+        if (next.questions_earned > prevEarned) {
+          setToast("1 question earned");
+        }
+        lastEarnedRef.current = next.questions_earned;
+        return next;
+      });
+      timer = setTimeout(tick, 4000);
+    }
+    tick();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 3500);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  const [askText, setAskText] = useState("");
+  const [askPending, setAskPending] = useState(false);
+  const [askError, setAskError] = useState<string | null>(null);
+  const [brief, setBrief] = useState<Brief | null>(null);
+
+  // Load any existing brief for this report (most-recent wins). Lets a
+  // returning visitor see the answer they already paid for.
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("briefs")
+        .select("id, report_id, verified_report_id, question, content, sources, created_at")
+        .eq("report_id", id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (cancelled) return;
+      if (data) setBrief(data as Brief);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
+  const submitQuestion = useCallback(async () => {
+    if (!id) return;
+    const q = askText.trim();
+    if (!q) return;
+    setAskError(null);
+    setAskPending(true);
+    const reporterId = getReporterId();
+    let userLat: number | undefined;
+    let userLon: number | undefined;
+    try {
+      const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+        if (typeof navigator === "undefined" || !navigator.geolocation) return reject(new Error("no geolocation"));
+        navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 4000, maximumAge: 60_000 });
+      });
+      userLat = pos.coords.latitude;
+      userLon = pos.coords.longitude;
+    } catch {
+      // Falls back to the report lat/lon server-side; expected on desktop.
+    }
+
+    let respondedSync = false;
+    supabase.functions
+      .invoke("research", {
+        body: {
+          report_id: id,
+          question: q,
+          reporter_id: reporterId,
+          user_lat: userLat,
+          user_lon: userLon,
+        },
+        headers: inviteHeaders(),
+      })
+      .then(({ data, error }) => {
+        if (error && error.name !== "FunctionsFetchError") {
+          setAskError(`Could not start the answer: ${error.message}`);
+          setAskPending(false);
+          return;
+        }
+        const payload = data as { brief?: Brief } | null;
+        if (payload?.brief) {
+          respondedSync = true;
+          setBrief(payload.brief);
+          setAskPending(false);
+          setAskText("");
+        }
+      })
+      .catch((e) => console.warn("[research] invoke fetch failed (polling continues)", e));
+
+    const startedAt = Date.now();
+    async function poll() {
+      if (respondedSync) return;
+      const { data } = await supabase
+        .from("briefs")
+        .select("id, report_id, verified_report_id, question, content, sources, created_at")
+        .eq("report_id", id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (data && (!brief || (data as Brief).id !== brief.id)) {
+        setBrief(data as Brief);
+        setAskPending(false);
+        setAskText("");
+        return;
+      }
+      if (Date.now() - startedAt > RESEARCH_POLL_TIMEOUT_MS) {
+        setAskError("DR is taking a while — your question is saved and we'll show the answer when ready.");
+        setAskPending(false);
+        return;
+      }
+      setTimeout(poll, POLL_INTERVAL_MS);
+    }
+    poll();
+  }, [askText, id, brief]);
+
+  const questionsAvailable = profile ? profile.questions_earned - profile.questions_used : 0;
+  const ungated = profileMissing;
+
   if (error) {
     return (
       <div className="flex h-dvh flex-col items-center justify-center gap-4 p-6 text-center text-red-400">
@@ -263,13 +429,32 @@ export default function ReportDetail() {
           </section>
         )}
         <ClassificationCard classification={classification} error={classifyError} onRetry={retryClassify} />
-        <VerifiedCard
-          verified={verified}
-          error={verifyError}
-          hasClassification={!!classification}
-          requested={verifyRequested}
-          onVerify={startVerification}
+        <QuestionCard
+          questionsAvailable={questionsAvailable}
+          ungated={ungated}
+          brief={brief}
+          askText={askText}
+          onAskTextChange={setAskText}
+          onSubmit={submitQuestion}
+          pending={askPending}
+          error={askError}
         />
+        {SHOW_DEBUG && (
+          <details className="rounded-lg border border-white/10 bg-white/5 p-4 text-sm" open>
+            <summary className="cursor-pointer text-xs uppercase tracking-wider text-white/50">
+              Debug · Reconciliation
+            </summary>
+            <div className="mt-3">
+              <VerifiedCard
+                verified={verified}
+                error={verifyError}
+                hasClassification={!!classification}
+                requested={verifyRequested}
+                onVerify={startVerification}
+              />
+            </div>
+          </details>
+        )}
         <section>
           <p className="text-white/50">Heading</p>
           <p className="text-xl font-semibold tabular-nums">{Math.round(report.heading_degrees)}°</p>
@@ -289,6 +474,17 @@ export default function ReportDetail() {
           </section>
         )}
       </main>
+      {toast && (
+        <div
+          role="status"
+          className="pointer-events-none fixed inset-x-0 z-40 flex justify-center px-4"
+          style={{ bottom: "calc(1.5rem + env(safe-area-inset-bottom))" }}
+        >
+          <div className="rounded-full bg-emerald-500/90 px-4 py-2 text-xs font-medium text-emerald-950 shadow-lg">
+            {toast}
+          </div>
+        </div>
+      )}
       {enlarged && report.photo_url && (
         <button
           type="button"
@@ -440,14 +636,26 @@ function VerifiedCard({
         <p className="mt-2 text-sm leading-relaxed text-white/80">{verified.rationale}</p>
       )}
       {verified.radar_frame_url && (
-        <a
-          href={verified.radar_frame_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mt-3 inline-block text-[11px] text-white/40 underline underline-offset-2"
-        >
-          View radar frame
-        </a>
+        <figure className="mt-3 overflow-hidden rounded-md border border-white/10 bg-black/40">
+          <img
+            src={verified.radar_frame_url}
+            alt="DWD RADOLAN radar frame compared against the report"
+            className="block w-full"
+            loading="lazy"
+            referrerPolicy="no-referrer"
+          />
+          <figcaption className="flex items-center justify-between px-2 py-1 text-[10px] text-white/40">
+            <span>DWD RADOLAN frame</span>
+            <a
+              href={verified.radar_frame_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline underline-offset-2"
+            >
+              Open in new tab
+            </a>
+          </figcaption>
+        </figure>
       )}
       <CostFooter stats={verified.session_stats} label="Reconciliation" />
     </section>
@@ -479,6 +687,129 @@ function VerdictPill({ verdict }: { verdict: VerifiedReport["verdict"] }) {
     <span className={`rounded-full border px-2.5 py-0.5 text-[10px] uppercase tracking-wider ${tone[verdict]}`}>
       {verdict}
     </span>
+  );
+}
+
+function QuestionCard({
+  questionsAvailable,
+  ungated,
+  brief,
+  askText,
+  onAskTextChange,
+  onSubmit,
+  pending,
+  error,
+}: {
+  questionsAvailable: number;
+  ungated: boolean;
+  brief: Brief | null;
+  askText: string;
+  onAskTextChange: (s: string) => void;
+  onSubmit: () => void;
+  pending: boolean;
+  error: string | null;
+}) {
+  const canAsk = ungated || questionsAvailable >= 1;
+
+  if (brief) {
+    return (
+      <section className="rounded-lg border border-white/10 bg-white/5 p-4 text-sm">
+        <div className="flex items-center justify-between">
+          <p className="text-white/50 text-xs uppercase tracking-wider">Answer</p>
+          {!ungated && (
+            <span className="text-[10px] uppercase tracking-wider text-white/40">
+              {questionsAvailable} {questionsAvailable === 1 ? "question" : "questions"} left
+            </span>
+          )}
+        </div>
+        {brief.question && (
+          <p className="mt-2 text-xs italic text-white/50">"{brief.question}"</p>
+        )}
+        <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-white/90">{brief.content}</p>
+        <SourcesRow sources={brief.sources} />
+      </section>
+    );
+  }
+
+  if (pending) {
+    return (
+      <section className="rounded-lg border border-white/10 bg-white/5 p-4 text-xs text-white/60">
+        <span className="inline-flex items-center gap-2">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-sky-400" />
+          Composing your answer…
+        </span>
+        {error && <p className="mt-2 text-amber-300">{error}</p>}
+      </section>
+    );
+  }
+
+  if (!canAsk) {
+    return (
+      <section className="flex flex-col gap-3 rounded-lg border border-white/10 bg-white/5 p-4 text-sm">
+        <div>
+          <p className="text-white/50 text-xs uppercase tracking-wider">Earn a question</p>
+          <p className="mt-1 text-white/80">
+            Verify a sky photo against radar to earn a question. Use it to ask Deep Researcher anything weather-grounded — best park for lunch in the next two hours, whether to head up the mountain this afternoon.
+          </p>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="flex flex-col gap-3 rounded-lg border border-white/10 bg-white/5 p-4 text-sm">
+      <div className="flex items-center justify-between">
+        <p className="text-white/50 text-xs uppercase tracking-wider">Ask a question</p>
+        {!ungated && (
+          <span className="text-[10px] uppercase tracking-wider text-white/40">
+            {questionsAvailable} {questionsAvailable === 1 ? "question" : "questions"} left
+          </span>
+        )}
+      </div>
+      <textarea
+        value={askText}
+        onChange={(e) => onAskTextChange(e.target.value)}
+        placeholder="e.g. Where in Munich is best for an outdoor lunch in the next 2 hours?"
+        rows={3}
+        maxLength={500}
+        className="w-full resize-none rounded-md border border-white/10 bg-black/40 p-3 text-sm text-white/90 placeholder:text-white/30 focus:border-sky-400/50 focus:outline-none"
+      />
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] text-white/30">{askText.length}/500</span>
+        <button
+          type="button"
+          onClick={onSubmit}
+          disabled={!askText.trim()}
+          className="rounded-full bg-sky-500/20 px-4 py-2 text-xs font-medium text-sky-100 ring-1 ring-sky-500/30 active:scale-95 disabled:opacity-40"
+        >
+          Ask
+        </button>
+      </div>
+      {error && <p className="text-xs text-amber-300">{error}</p>}
+    </section>
+  );
+}
+
+function SourcesRow({ sources }: { sources: BriefSource[] | null }) {
+  if (!sources || sources.length === 0) return null;
+  const tone: Record<BriefSource["kind"], string> = {
+    weather: "bg-sky-500/15 text-sky-200 border-sky-500/30",
+    community: "bg-emerald-500/15 text-emerald-200 border-emerald-500/30",
+    satellite: "bg-violet-500/15 text-violet-200 border-violet-500/30",
+    radar: "bg-amber-500/15 text-amber-200 border-amber-500/30",
+  };
+  return (
+    <div className="mt-3 flex flex-wrap gap-1.5 border-t border-white/5 pt-3">
+      {sources.map((s, i) => (
+        <span
+          key={`${s.label}-${i}`}
+          className={`rounded-full border px-2 py-0.5 text-[10px] ${tone[s.kind] ?? "bg-white/5 text-white/60 border-white/10"}`}
+          title={s.ref}
+        >
+          {s.label}
+        </span>
+      ))}
+    </div>
   );
 }
 

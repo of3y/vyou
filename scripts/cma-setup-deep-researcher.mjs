@@ -17,6 +17,7 @@ const skills = [
   requireSkill("SEVERE_WEATHER_REPORTING", "severe-weather-reporting"),
   requireSkill("RADAR_AND_SATELLITE_REFERENCE", "radar-and-satellite-reference"),
   requireSkill("PRIOR_ART_SCAN", "prior-art-scan"),
+  requireSkill("DEEP_RESEARCHER_PLANNER", "deep-researcher-planner"),
 ];
 
 const SYSTEM_PROMPT = `You are the VYou Deep Researcher — the content-layer orchestrator that turns a verified weather report into a cited evidence brief.

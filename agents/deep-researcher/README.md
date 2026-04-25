@@ -7,7 +7,7 @@ updated: 2026-04-24
 author: VYou
 type: reference
 tags: [agent, managed-agent, deep-researcher, memory-box, opus-4-7, orchestrator]
-skills: [severe-weather-reporting, radar-and-satellite-reference, prior-art-scan]
+skills: [severe-weather-reporting, radar-and-satellite-reference, prior-art-scan, deep-researcher-planner]
 summary: The post-Reconciliation content-layer orchestrator. Fires when `reports.status='accepted'`, opens a CMA session with per-user + per-location Memory Box stores attached, reads the persisted pipeline outputs + nearby prior briefs, and composes a cited evidence-summary block that renders under the classification block in ReportDetail. The agent behind the "second user, same cell, richer brief" Memory Box demo beat.
 ---
 
@@ -33,11 +33,12 @@ The Memory Box demo beat is built on this layout: a second beta user submits a p
 
 ## Attached skills
 
-Three skills land on the agent at `agents.create()` time:
+Four skills land on the agent at `agents.create()` time:
 
 - **[severe-weather-reporting](../../skills/severe-weather-reporting)** — the phenomenon taxonomy and diagnostic feature vocabulary the brief cites when describing what was observed.
-- **[radar-and-satellite-reference](../../skills/radar-and-satellite-reference)** — DWD RADOLAN interpretation and MTG FCI/LI framing the brief cites when describing the official weather context.
+- **[radar-and-satellite-reference](../../skills/radar-and-satellite-reference)** — DWD RADOLAN interpretation, MTG FCI/LI framing, and the Open-Meteo `current` field set the brief grounds state-of-the-air claims in.
 - **[prior-art-scan](../../skills/prior-art-scan)** — adjacent-platform reference entries the brief uses when grounding VYou's observation in the landscape (*"Windy shows X here, a community observer says Y"*).
+- **[deep-researcher-planner](../../skills/deep-researcher-planner)** — the DR voice spec, conditional-suggestion trigger pattern, local-guide register, staleness-honesty rule, and the JSON output contract the `/research` Edge Function parses.
 
 ## Trigger and output
 
