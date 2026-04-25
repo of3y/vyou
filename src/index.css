@@ -30,3 +30,74 @@ textarea,
 select {
   font-size: 16px !important;
 }
+
+/* No text-selection on interactive surfaces — buttons, links, role=button,
+ * checkboxes, the drawer handle, etc. Long-press / drag should never produce
+ * a selection caret on a control. Inputs/textareas opt back in below. */
+button,
+a,
+label,
+summary,
+[role="button"],
+[role="tab"],
+[role="switch"],
+[role="checkbox"],
+[role="menuitem"],
+[data-vaul-handle],
+.vyou-time-slider {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+input,
+textarea,
+[contenteditable="true"] {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* Hidden scrollbars — used inside drawers so the content scrolls edge-to-edge
+ * without a visible track or thumb. */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+/* Discreet MapLibre attribution: tucked into the bottom-right corner,
+ * tiny and translucent so it never fights the primary CTA. The "i" toggles
+ * to expand to the full attribution string when tapped. */
+.maplibregl-ctrl-bottom-right {
+  margin: 0 6px 4px 0 !important;
+}
+.maplibregl-ctrl-bottom-right .maplibregl-ctrl-attrib {
+  background: rgba(15, 17, 21, 0.55) !important;
+  border-radius: 999px !important;
+  padding: 0 !important;
+  min-height: 18px;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.55);
+}
+.maplibregl-ctrl-attrib.maplibregl-compact:not(.maplibregl-compact-show) {
+  padding: 0 !important;
+}
+.maplibregl-ctrl-attrib-button {
+  width: 18px !important;
+  height: 18px !important;
+  background-color: transparent !important;
+  opacity: 0.55;
+}
+.maplibregl-ctrl-attrib.maplibregl-compact-show {
+  padding: 4px 22px 4px 8px !important;
+  min-height: 22px;
+}
+.maplibregl-ctrl-attrib a {
+  color: rgba(255, 255, 255, 0.7) !important;
+}

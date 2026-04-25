@@ -28,8 +28,10 @@ import {
 
 const MUNICH: [number, number] = [11.582, 48.1351];
 
-const CONE_WINDOW_MS = 2 * 60 * 60 * 1000;
-const CONE_FETCH_LOOKBACK_MS = 4 * 60 * 60 * 1000;
+// Display window scales with the time picker (1H / 6H / 24H / 1W). Fetch
+// lookback covers the longest window so window changes don't require a refetch.
+const DEFAULT_WINDOW_MS = 6 * 60 * 60 * 1000;
+const CONE_FETCH_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
 
 const CONE_FILL_LAYER_ID = "report-cones-fill";
 const CONE_OUTLINE_LAYER_ID = "report-cones-outline";
@@ -47,7 +49,7 @@ export type LayerVisibility = {
 
 const DEFAULT_VISIBILITY: LayerVisibility = {
   cones: true,
-  radar: true,
+  radar: false,
   lightning: false,
   ir: false,
 };
@@ -58,6 +60,9 @@ type Props = {
   className?: string;
   currentTime?: LayerTime;
   layerVisibility?: LayerVisibility;
+  onConeClick?: (reportId: string) => void;
+  activeReportId?: string | null;
+  windowMs?: number;
 };
 
 type ReportRow = {
@@ -100,9 +105,13 @@ async function fetchConeFeatures(): Promise<TimedConeFeature[]> {
     });
 }
 
-function filterCones(features: TimedConeFeature[], time: LayerTime): FeatureCollection<Polygon> {
+function filterCones(
+  features: TimedConeFeature[],
+  time: LayerTime,
+  windowMs: number,
+): FeatureCollection<Polygon> {
   const upper = time === "live" ? Date.now() : time.getTime();
-  const lower = upper - CONE_WINDOW_MS;
+  const lower = upper - windowMs;
   return {
     type: "FeatureCollection",
     features: features.filter(
@@ -121,7 +130,22 @@ export default function MapView({
   className,
   currentTime,
   layerVisibility,
+  onConeClick,
+  activeReportId,
+  windowMs,
 }: Props) {
+  const effectiveWindowMs = windowMs ?? DEFAULT_WINDOW_MS;
+  const onConeClickRef = useRef(onConeClick);
+  onConeClickRef.current = onConeClick;
+  const activeFidRef = useRef<string | number | null>(null);
+  const setActiveRef = useRef<((fid: string | number | null) => void) | null>(null);
+  const dimmedFidsRef = useRef<Set<string | number>>(new Set());
+  const savedCameraRef = useRef<{
+    center: [number, number];
+    zoom: number;
+    bearing: number;
+    pitch: number;
+  } | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const initialCenter = useRef(center ?? MUNICH);
@@ -182,7 +206,7 @@ export default function MapView({
       }),
       "top-right",
     );
-    map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-left");
+    map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
 
     map.on("error", (e) => {
       const url = (e?.error as { url?: string } | undefined)?.url ?? "";
@@ -198,6 +222,7 @@ export default function MapView({
       map.addSource(CONE_SOURCE_ID, {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
+        generateId: true,
       });
 
       map.addLayer({
@@ -205,25 +230,167 @@ export default function MapView({
         type: "fill",
         source: CONE_SOURCE_ID,
         layout: { visibility: visibilityValue(visibility.cones) },
-        paint: { "fill-color": "#10b981", "fill-opacity": 0.25 },
+        paint: {
+          "fill-color": [
+            "case",
+            ["boolean", ["feature-state", "dimmed"], false], "#64748b",
+            "#34d399",
+          ],
+          "fill-opacity": [
+            "case",
+            ["boolean", ["feature-state", "active"], false], 0.55,
+            ["boolean", ["feature-state", "hover"], false], 0.4,
+            ["boolean", ["feature-state", "dimmed"], false], 0.06,
+            0.22,
+          ],
+        },
       });
       map.addLayer({
         id: CONE_OUTLINE_LAYER_ID,
         type: "line",
         source: CONE_SOURCE_ID,
         layout: { visibility: visibilityValue(visibility.cones) },
-        paint: { "line-color": "#10b981", "line-width": 1.5, "line-opacity": 0.8 },
+        paint: {
+          "line-color": [
+            "case",
+            ["boolean", ["feature-state", "active"], false], "#a7f3d0",
+            ["boolean", ["feature-state", "dimmed"], false], "#475569",
+            "#34d399",
+          ],
+          "line-width": [
+            "case",
+            ["boolean", ["feature-state", "active"], false], 2.5,
+            ["boolean", ["feature-state", "hover"], false], 2,
+            ["boolean", ["feature-state", "dimmed"], false], 0.75,
+            1.25,
+          ],
+          "line-opacity": [
+            "case",
+            ["boolean", ["feature-state", "active"], false], 1,
+            ["boolean", ["feature-state", "hover"], false], 1,
+            ["boolean", ["feature-state", "dimmed"], false], 0.4,
+            0.9,
+          ],
+        },
       });
 
       conesRef.current = await fetchConeFeatures();
       const source = map.getSource(CONE_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
-      source?.setData(filterCones(conesRef.current, time));
+      source?.setData(filterCones(conesRef.current, time, effectiveWindowMs));
       loadedRef.current = true;
+
+      let hoverFid: string | number | null = null;
+      const setHover = (fid: string | number | null) => {
+        if (hoverFid === fid) return;
+        if (hoverFid !== null) {
+          map.setFeatureState({ source: CONE_SOURCE_ID, id: hoverFid }, { hover: false });
+        }
+        hoverFid = fid;
+        if (fid !== null) {
+          map.setFeatureState({ source: CONE_SOURCE_ID, id: fid }, { hover: true });
+        }
+      };
+
+      const dimOthers = (activeFid: string | number) => {
+        const features = map.querySourceFeatures(CONE_SOURCE_ID);
+        const next = new Set<string | number>();
+        for (const f of features) {
+          if (f.id === undefined || f.id === activeFid) continue;
+          map.setFeatureState({ source: CONE_SOURCE_ID, id: f.id }, { dimmed: true });
+          next.add(f.id);
+        }
+        dimmedFidsRef.current = next;
+      };
+      const clearDimmed = () => {
+        for (const fid of dimmedFidsRef.current) {
+          map.setFeatureState({ source: CONE_SOURCE_ID, id: fid }, { dimmed: false });
+        }
+        dimmedFidsRef.current.clear();
+      };
+
+      const setActive = (fid: string | number | null) => {
+        if (activeFidRef.current === fid) return;
+        if (activeFidRef.current !== null) {
+          map.setFeatureState({ source: CONE_SOURCE_ID, id: activeFidRef.current }, { active: false });
+        }
+        activeFidRef.current = fid;
+        if (fid !== null) {
+          map.setFeatureState({ source: CONE_SOURCE_ID, id: fid }, { active: true });
+          dimOthers(fid);
+        } else {
+          clearDimmed();
+        }
+      };
+      setActiveRef.current = setActive;
+
+      const handleConeClick = (e: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => {
+        const f = e.features?.[0];
+        const id = f?.properties?.id;
+        const fid = f?.id;
+        if (typeof id !== "string") return;
+        if (fid !== undefined) setActive(fid);
+
+        // Stash the previous camera so closing the drawer restores the view.
+        if (!savedCameraRef.current) {
+          savedCameraRef.current = {
+            center: map.getCenter().toArray() as [number, number],
+            zoom: map.getZoom(),
+            bearing: map.getBearing(),
+            pitch: map.getPitch(),
+          };
+        }
+
+        // Frame the cone polygon in the upper half of the viewport — push it
+        // up by padding the bottom by the drawer height (50vh).
+        const geom = f?.geometry;
+        if (geom && geom.type === "Polygon") {
+          const ring = geom.coordinates[0] as [number, number][];
+          let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
+          for (const [lng, lat] of ring) {
+            if (lng < minLng) minLng = lng;
+            if (lng > maxLng) maxLng = lng;
+            if (lat < minLat) minLat = lat;
+            if (lat > maxLat) maxLat = lat;
+          }
+          const drawerH = Math.round(window.innerHeight * 0.5);
+          map.fitBounds(
+            [[minLng, minLat], [maxLng, maxLat]],
+            {
+              padding: { top: 96, right: 64, bottom: drawerH + 48, left: 64 },
+              duration: 750,
+              maxZoom: 13.5,
+              essential: true,
+            },
+          );
+        }
+
+        onConeClickRef.current?.(id);
+      };
+      map.on("click", CONE_FILL_LAYER_ID, handleConeClick);
+      map.on("mousemove", CONE_FILL_LAYER_ID, (e) => {
+        map.getCanvas().style.cursor = "pointer";
+        const fid = e.features?.[0]?.id;
+        if (fid !== undefined) setHover(fid);
+      });
+      map.on("mouseleave", CONE_FILL_LAYER_ID, () => {
+        map.getCanvas().style.cursor = "";
+        setHover(null);
+      });
     });
 
     mapRef.current = map;
 
+    // MapLibre only auto-resizes on window resize. Vaul opening/closing the
+    // drawer (and any other layout shift around the map container) does not
+    // fire a window resize, so the canvas stays at its stale dimensions and
+    // the map collapses to a small square. ResizeObserver fixes that.
+    const ro = new ResizeObserver(() => {
+      if (mapRef.current) mapRef.current.resize();
+    });
+    ro.observe(containerRef.current!);
+
     return () => {
+      ro.disconnect();
       loadedRef.current = false;
       map.remove();
       mapRef.current = null;
@@ -244,6 +411,70 @@ export default function MapView({
     map.setZoom(zoom);
   }, [zoom]);
 
+  // Lock map gestures while a cone is selected. Tap-to-select another cone
+  // still works (clicks aren't affected), but pan/zoom/pitch/rotate gestures
+  // are inert so the drawer interaction can't be undermined by accidental
+  // map drags.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const apply = () => {
+      if (activeReportId) {
+        map.dragPan.disable();
+        map.dragRotate.disable();
+        map.touchZoomRotate.disable();
+        map.touchPitch.disable();
+        map.scrollZoom.disable();
+        map.doubleClickZoom.disable();
+        map.boxZoom.disable();
+        map.keyboard.disable();
+      } else {
+        map.dragPan.enable();
+        map.dragRotate.enable();
+        map.touchZoomRotate.enable();
+        map.touchPitch.enable();
+        map.scrollZoom.enable();
+        map.doubleClickZoom.enable();
+        map.boxZoom.enable();
+        map.keyboard.enable();
+      }
+    };
+    if (loadedRef.current) apply();
+    else map.once("load", apply);
+  }, [activeReportId]);
+
+  // Sync active highlight from the parent. Resolves the report id to the
+  // generated feature id by scanning rendered features on the cone layer.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !setActiveRef.current) return;
+    if (!activeReportId) {
+      setActiveRef.current(null);
+      // Restore the camera the user had before tapping a cone.
+      const saved = savedCameraRef.current;
+      if (saved) {
+        map.easeTo({
+          center: saved.center,
+          zoom: saved.zoom,
+          bearing: saved.bearing,
+          pitch: saved.pitch,
+          duration: 600,
+          essential: true,
+        });
+        savedCameraRef.current = null;
+      }
+      return;
+    }
+    const apply = () => {
+      if (!map.getLayer(CONE_FILL_LAYER_ID)) return;
+      const features = map.querySourceFeatures(CONE_SOURCE_ID);
+      const match = features.find((f) => (f.properties as { id?: string } | null)?.id === activeReportId);
+      if (match?.id !== undefined) setActiveRef.current?.(match.id);
+    };
+    if (loadedRef.current) apply();
+    else map.once("load", apply);
+  }, [activeReportId]);
+
   // Push time changes to all time-indexed layers + cone filter.
   const timeKey = time === "live" ? "live" : time.toISOString();
   useEffect(() => {
@@ -253,8 +484,8 @@ export default function MapView({
     setMtgIRTime(map, time);
     setMtgLightningTime(map, time);
     const source = map.getSource(CONE_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
-    source?.setData(filterCones(conesRef.current, time));
-  }, [timeKey]);
+    source?.setData(filterCones(conesRef.current, time, effectiveWindowMs));
+  }, [timeKey, effectiveWindowMs]);
 
   // Push visibility changes.
   useEffect(() => {
