@@ -11,7 +11,7 @@ import {
   cameraBearingFromDeviceOrientation,
 } from "../lib/heading";
 
-type Step = "permissions" | "camera" | "heading" | "submit" | "thanks";
+type Step = "permissions" | "camera" | "heading" | "submit" | "celebrating";
 
 type Capture = {
   blob: Blob;
@@ -141,7 +141,7 @@ export default function CaptureFlow() {
       trackClassification(data.id);
       setSubmittedReportId(data.id);
       setSubmitting(false);
-      setStep("thanks");
+      setStep("celebrating");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
       notify.error(`Submit failed: ${message}`);
@@ -159,7 +159,7 @@ export default function CaptureFlow() {
           ← Map
         </Link>
         <span className="text-xs uppercase tracking-wider text-white/40">
-          {step === "thanks" ? "submitted" : step}
+          {step === "celebrating" ? "submitted" : step}
         </span>
       </header>
 
@@ -202,11 +202,10 @@ export default function CaptureFlow() {
             submitting={submitting}
           />
         )}
-        {step === "thanks" && submittedReportId && (
-          <ThanksStep
+        {step === "celebrating" && submittedReportId && (
+          <CelebrateStep
             photoUrl={capture?.blobUrl}
-            onBackToMap={() => navigate("/")}
-            onAsk={() => navigate(`/report/${submittedReportId}`)}
+            onContinue={() => navigate("/")}
           />
         )}
       </main>
@@ -214,51 +213,86 @@ export default function CaptureFlow() {
   );
 }
 
-function ThanksStep({
+// Hardened-plan v2 Fix F — submission celebration + auto-return.
+//
+// The thanks step used to be a destination with two CTAs ("Back to map" /
+// "Ask a question"). Daniel's reshape: capture-and-submit is one act. The
+// user submits and returns to the map; the verdict lands asynchronously on
+// the bell. So this is a brief celebration overlay — photo pulses, ring
+// expands, check pops — that auto-navigates to the map after ~1.5s.
+//
+// Background-tab safety: rAF is throttled or paused when the tab is not
+// visible; setTimeout is also throttled. We use rAF + a wall-clock elapsed
+// check. If the user backgrounded the app and the next frame fires after
+// 5s+ have passed, we render a manual "Back to map" button rather than
+// snapping the viewport on a stale animation.
+//
+// trackClassification(reportId) is registered before this step renders, so
+// the route-independent toast pops on the map page when the verdict lands.
+function CelebrateStep({
   photoUrl,
-  onBackToMap,
-  onAsk,
+  onContinue,
 }: {
   photoUrl?: string;
-  onBackToMap: () => void;
-  onAsk: () => void;
+  onContinue: () => void;
 }) {
+  const [stuck, setStuck] = useState(false);
+  const startedAtRef = useRef<number>(performance.now());
+  const navigatedRef = useRef(false);
+
+  useEffect(() => {
+    let raf = 0;
+    const loop = () => {
+      const elapsed = performance.now() - startedAtRef.current;
+      if (elapsed >= 5000) {
+        setStuck(true);
+        return;
+      }
+      if (elapsed >= 1500) {
+        if (!navigatedRef.current) {
+          navigatedRef.current = true;
+          onContinue();
+        }
+        return;
+      }
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [onContinue]);
+
   return (
-    <div className="flex h-full flex-col items-center justify-between gap-6 px-6 pt-6 pb-[calc(2rem+env(safe-area-inset-bottom))] text-center">
-      <div className="flex flex-1 flex-col items-center justify-center gap-5">
+    <div className="flex h-full flex-col items-center justify-center gap-8 px-6 text-center">
+      <div className="relative flex items-center justify-center">
         {photoUrl && (
-          <div className="relative h-36 w-36 overflow-hidden rounded-3xl ring-1 ring-white/10 shadow-[0_20px_50px_-20px_rgba(0,0,0,0.8)]">
+          <div className="vyou-celebrate-photo relative h-40 w-40 overflow-hidden rounded-3xl ring-1 ring-white/10 shadow-[0_20px_50px_-20px_rgba(0,0,0,0.8)]">
             <img src={photoUrl} alt="Submitted sky" className="h-full w-full object-cover" />
-            <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
           </div>
         )}
-        <div className="space-y-2">
-          <h1 className="text-[26px] font-semibold leading-tight tracking-tight">Thanks for the sky</h1>
-          <p className="mx-auto max-w-sm text-[14px] leading-relaxed text-white/60">
-            Your cone is on the map. Opus is reading it now —
-            we'll ping you the moment the classification lands.
-          </p>
-        </div>
-        <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[12px] text-white/65">
-          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
-          Classifying in the background
+        <span className="vyou-celebrate-ring pointer-events-none absolute inset-[-12px] rounded-[2rem] border-2 border-emerald-400/80" aria-hidden />
+        <span className="vyou-celebrate-check absolute -bottom-3 -right-3 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500 text-black shadow-[0_10px_30px_-10px_rgba(16,185,129,0.7)]" aria-hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
         </span>
       </div>
-
-      <div className="flex w-full max-w-xs flex-col gap-3">
+      <div className="space-y-1.5">
+        <h1 className="text-[24px] font-semibold leading-tight tracking-tight">On the map</h1>
+        <p className="text-[13px] text-white/60">Verifying in the background — we'll ping you when it lands.</p>
+      </div>
+      {stuck && (
         <button
-          onClick={onBackToMap}
-          className="rounded-full bg-white px-8 py-3 text-[14px] font-semibold text-black shadow-[0_10px_30px_-10px_rgba(255,255,255,0.4)] active:scale-[0.98]"
+          type="button"
+          onClick={() => {
+            if (navigatedRef.current) return;
+            navigatedRef.current = true;
+            onContinue();
+          }}
+          className="mt-2 rounded-full bg-white px-6 py-2.5 text-[13px] font-semibold text-black active:scale-[0.98]"
         >
           Back to map
         </button>
-        <button
-          onClick={onAsk}
-          className="rounded-full border border-white/15 bg-white/[0.04] px-8 py-3 text-[14px] font-semibold text-white backdrop-blur active:scale-[0.98]"
-        >
-          Ask a question about this sky
-        </button>
-      </div>
+      )}
     </div>
   );
 }

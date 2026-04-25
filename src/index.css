@@ -69,6 +69,38 @@ textarea,
   display: none;
 }
 
+/* Submit-celebration overlay (CaptureFlow → map). Reads tactile without
+ * relying on navigator.vibrate (iOS Safari no-ops it). The check pops in
+ * after the photo settles; the green ring expands as a subtle confirm. */
+@keyframes vyou-celebrate-photo {
+  0% { transform: scale(0.6); opacity: 0; }
+  40% { transform: scale(1.08); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes vyou-celebrate-ring {
+  0% { transform: scale(0.4); opacity: 0.0; }
+  35% { opacity: 0.85; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+@keyframes vyou-celebrate-check {
+  0% { transform: scale(0); opacity: 0; }
+  50% { transform: scale(0); opacity: 0; }
+  70% { transform: scale(1.25); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+.vyou-celebrate-photo { animation: vyou-celebrate-photo 600ms cubic-bezier(0.2, 0.9, 0.3, 1.2) both; }
+.vyou-celebrate-ring { animation: vyou-celebrate-ring 1100ms cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.vyou-celebrate-check { animation: vyou-celebrate-check 900ms cubic-bezier(0.2, 0.9, 0.3, 1.2) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .vyou-celebrate-photo,
+  .vyou-celebrate-ring,
+  .vyou-celebrate-check {
+    animation: none;
+    opacity: 1;
+  }
+}
+
 /* Discreet MapLibre attribution: tucked into the bottom-right corner,
  * tiny and translucent so it never fights the primary CTA. The "i" toggles
  * to expand to the full attribution string when tapped. */
