@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { hardRefresh } from "../lib/refresh";
+import { getInviteToken } from "../lib/invite";
 
 export type ConnStatus = "connecting" | "online" | "slow" | "offline";
 
@@ -11,9 +12,43 @@ type Props = {
 export default function StatusPill({ status, lastOkAt }: Props) {
   const [open, setOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [pasteError, setPasteError] = useState<string | null>(null);
+  const [pasting, setPasting] = useState(false);
 
   const dot = dotClass(status);
   const label = pillLabel(status);
+  const currentToken = getInviteToken();
+  const tokenPreview = currentToken
+    ? `${currentToken.slice(0, 6)}…${currentToken.slice(-3)}`
+    : "(none)";
+
+  const pasteInvite = useCallback(async () => {
+    setPasteError(null);
+    setPasting(true);
+    try {
+      const raw = window.prompt("Paste your invite link or token:");
+      if (!raw) return;
+      const trimmed = raw.trim();
+      let token: string | null = null;
+      try {
+        const url = new URL(trimmed);
+        token = url.searchParams.get("invite");
+      } catch {
+        token = trimmed;
+      }
+      if (!token) {
+        setPasteError("No invite token found in that link.");
+        return;
+      }
+      window.localStorage.setItem("vyou_invite", token);
+      // Reload so the new token is picked up by every polling effect at once
+      // — simpler than threading a refresh signal through the app and
+      // matches the InviteGate's behaviour after the splash paste.
+      window.location.reload();
+    } finally {
+      setPasting(false);
+    }
+  }, []);
 
   return (
     <>
@@ -60,7 +95,23 @@ export default function StatusPill({ status, lastOkAt }: Props) {
               <Row label="Last sync">
                 <span className="text-white/70">{formatLastSync(lastOkAt)}</span>
               </Row>
+              <Row label="Invite">
+                <span className="font-mono text-xs text-white/70">{tokenPreview}</span>
+              </Row>
             </dl>
+            <p className="mt-4 text-xs text-white/50">
+              Wrong invite or moved between deployments? Paste a fresh token below — the page
+              reloads so every poll picks it up.
+            </p>
+            <button
+              type="button"
+              disabled={pasting}
+              onClick={pasteInvite}
+              className="mt-3 w-full rounded-full bg-white/10 px-4 py-2.5 text-sm font-semibold text-white active:scale-95 disabled:opacity-50"
+            >
+              {pasting ? "…" : "Paste invite link"}
+            </button>
+            {pasteError && <p className="mt-2 text-xs text-amber-300">{pasteError}</p>}
             <p className="mt-4 text-xs text-white/50">
               Stuck or expecting a fresh build? Hard refresh clears the app cache and reloads —
               works inside the home-screen PWA without re-installing.
@@ -72,7 +123,7 @@ export default function StatusPill({ status, lastOkAt }: Props) {
                 setRefreshing(true);
                 await hardRefresh();
               }}
-              className="mt-4 w-full rounded-full bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-black active:scale-95 disabled:opacity-50"
+              className="mt-3 w-full rounded-full bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-black active:scale-95 disabled:opacity-50"
             >
               {refreshing ? "Refreshing…" : "Hard refresh"}
             </button>
