@@ -155,14 +155,20 @@ export default function ReportDetail() {
     };
   }, [classification]);
 
+  const [verifyAttempt, setVerifyAttempt] = useState(0);
+
   // Polling loop runs only after the visitor explicitly taps Verify. It
   // invokes the edge function and then polls verified_reports until the
-  // server writes a row.
+  // server writes a row. verifyAttempt drives re-dispatch on Try again —
+  // each retry clears the dispatch guard for this classification id so
+  // the invoke actually fires again, not just the poller.
   useEffect(() => {
     if (!verifyRequested || !classification) return;
     let cancelled = false;
     const startedAt = Date.now();
     const cid = classification.id;
+
+    if (verifyAttempt > 0) dispatchedReconcileFor.current.delete(cid);
 
     if (!dispatchedReconcileFor.current.has(cid)) {
       dispatchedReconcileFor.current.add(cid);
@@ -171,17 +177,42 @@ export default function ReportDetail() {
           body: { classification_id: cid },
           headers: inviteHeaders(),
         })
-        .then(({ data, error }) => {
+        .then(async ({ data, error }) => {
           if (cancelled) return;
-          if (error && error.name !== "FunctionsFetchError") {
-            setVerifyError(`Reconciliation could not start: ${error.message}`);
+          if (error) {
+            // Surface the server-side message verbatim when available — generic
+            // "non-2xx status" is unactionable. error.context (FunctionsHttpError)
+            // carries the original response we can re-read for the body.
+            let serverMessage: string | null = null;
+            const ctx = (error as { context?: Response }).context;
+            if (ctx && typeof ctx.clone === "function") {
+              try {
+                const body = await ctx.clone().json();
+                if (body && typeof body === "object" && "error" in body) {
+                  serverMessage = String((body as { error: unknown }).error);
+                }
+              } catch {
+                // ignore — fall through to error.message
+              }
+            }
+            // FunctionsFetchError is the iOS PWA long-poll quirk; keep silent
+            // and let the row poller recover.
+            if (error.name === "FunctionsFetchError" && !serverMessage) return;
+            setVerifyError(serverMessage ?? `Reconciliation could not start: ${error.message}`);
             return;
           }
           const payload = data as { verified_report?: VerifiedReport; timed_out?: boolean } | null;
           if (payload?.verified_report) setVerified(payload.verified_report);
         })
         .catch((e) => {
-          if (!cancelled) console.warn("[reconcile] invoke fetch failed (polling continues)", e);
+          if (!cancelled) {
+            console.warn("[reconcile] invoke fetch failed (polling continues)", e);
+            setVerifyError(
+              e instanceof Error
+                ? `Network error reaching reconcile: ${e.message}`
+                : "Network error reaching reconcile.",
+            );
+          }
         });
     }
 
@@ -200,7 +231,9 @@ export default function ReportDetail() {
         return;
       }
       if (Date.now() - startedAt > RECONCILE_POLL_TIMEOUT_MS) {
-        setVerifyError("Reconciliation did not respond within 3 minutes.");
+        setVerifyError(
+          "Reconciliation didn't respond within 3 minutes. The classifier session likely died upstream — try again.",
+        );
         return;
       }
       setTimeout(poll, POLL_INTERVAL_MS);
@@ -209,11 +242,12 @@ export default function ReportDetail() {
     return () => {
       cancelled = true;
     };
-  }, [verifyRequested, classification]);
+  }, [verifyRequested, classification, verifyAttempt]);
 
   function startVerification() {
     setVerifyError(null);
     setVerifyRequested(true);
+    setVerifyAttempt((n) => n + 1);
   }
 
   // ---------------- Earn-a-Question + Ask wiring ----------------
