@@ -3,6 +3,7 @@ import Anthropic from "npm:@anthropic-ai/sdk@0.91.0";
 import { buildSessionStats } from "../_shared/cost.ts";
 import { requireInvite } from "../_shared/invite.ts";
 import { fetchOpenMeteo, openMeteoSummary } from "../_shared/feeds.ts";
+import { extractJson } from "../_shared/extractJson.ts";
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
@@ -256,6 +257,10 @@ async function handle(req: Request): Promise<Response> {
 
   const parsed = parseBrief(transcript);
   if (!parsed) {
+    const tail = transcript.slice(-400).replace(/\s+/g, " ").trim();
+    console.warn(
+      `[research] unparseable brief session=${session.id} transcript_len=${transcript.length} tail=${tail}`,
+    );
     return jsonResponse({ error: "agent did not return parseable response", transcript, session_stats: sessionStats }, 502);
   }
 
@@ -349,28 +354,18 @@ Compose a brief that answers the user's question per the deep-researcher-planner
 
 function parseBrief(text: string): { content: string; sources: Array<Record<string, unknown>> } | null {
   const trimmed = text.trim();
-  // First attempt: pure JSON.
-  try {
-    const obj = JSON.parse(trimmed);
-    if (typeof obj.content === "string") {
-      return { content: obj.content, sources: Array.isArray(obj.sources) ? obj.sources : [] };
-    }
-  } catch {
-    // fall through
+  // Shared extractor walks every balanced {...} candidate from the end and
+  // requires `content` so we don't return a schema-rehearsal fragment that
+  // happened to parse but lacks the answer text.
+  const obj = extractJson(trimmed, { requireKeys: ["content"] });
+  if (obj && typeof obj.content === "string") {
+    return {
+      content: obj.content,
+      sources: Array.isArray(obj.sources) ? obj.sources : [],
+    };
   }
-  // Second attempt: JSON inside a fenced code block.
-  const fence = trimmed.match(/```(?:json)?\s*([\s\S]+?)```/);
-  if (fence) {
-    try {
-      const obj = JSON.parse(fence[1].trim());
-      if (typeof obj.content === "string") {
-        return { content: obj.content, sources: Array.isArray(obj.sources) ? obj.sources : [] };
-      }
-    } catch {
-      // fall through
-    }
-  }
-  // Last-ditch: take the whole transcript as the content with no sources.
+  // Last-ditch: take the whole transcript as the content with no sources —
+  // the model spoke prose instead of JSON; surface the prose rather than 502.
   if (trimmed.length > 0) return { content: trimmed, sources: [] };
   return null;
 }

@@ -294,8 +294,15 @@ Reconcile per the output contract.`,
     return jsonResponse({ verified_report: row, timed_out: true, session_id: session.id }, 504);
   }
 
-  const parsed = extractJson(transcript);
+  const parsed = extractJson(transcript, { requireKeys: ["verdict"] });
   if (!parsed) {
+    // Log the tail of the transcript so prod incidents are diagnosable from
+    // the function logs alone — the 502 body carries the full transcript for
+    // the UI but logs are cheaper to grep at scale.
+    const tail = transcript.slice(-400).replace(/\s+/g, " ").trim();
+    console.warn(
+      `[reconcile] unparseable JSON session=${session.id} transcript_len=${transcript.length} tail=${tail}`,
+    );
     return jsonResponse({ error: "agent did not return parseable JSON", transcript }, 502);
   }
 
