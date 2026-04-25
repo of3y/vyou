@@ -363,9 +363,25 @@ export default function ReportDetail() {
         },
         headers: inviteHeaders(),
       })
-      .then(({ data, error }) => {
+      .then(async ({ data, error }) => {
         if (error && error.name !== "FunctionsFetchError") {
-          setAskError(`Could not start the answer: ${error.message}`);
+          // Unwrap the server-side error body — supabase-js's error.message
+          // is the generic "Edge Function returned a non-2xx status code"
+          // which hides the actual reason (invite exhausted, no questions
+          // available, internal session failure, etc).
+          let serverMessage: string | null = null;
+          const ctx = (error as { context?: Response }).context;
+          if (ctx && typeof ctx.clone === "function") {
+            try {
+              const body = await ctx.clone().json();
+              if (body && typeof body === "object" && "error" in body) {
+                serverMessage = String((body as { error: unknown }).error);
+              }
+            } catch {
+              // fall through to error.message
+            }
+          }
+          setAskError(`Could not start the answer: ${serverMessage ?? error.message}`);
           setAskPending(false);
           return;
         }

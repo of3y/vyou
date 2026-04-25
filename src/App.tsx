@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect } from "react";
 import { Route, Routes } from "react-router-dom";
 
+import ErrorBoundary from "./components/ErrorBoundary";
 import InstallHint from "./components/InstallHint";
 import InviteBanner from "./components/InviteBanner";
 import InviteGate from "./components/InviteGate";
@@ -26,18 +27,20 @@ export default function App() {
   }, []);
 
   return (
-    <InviteGate>
-      <Suspense fallback={<RouteFallback />}>
-        <Routes>
-          <Route path="/" element={<MapPage />} />
-          <Route path="/capture" element={<CaptureFlow />} />
-          <Route path="/report/:id" element={<ReportDetail />} />
-          <Route path="/reports" element={<ReportsList />} />
-          <Route path="/about" element={<AboutPage />} />
-        </Routes>
-      </Suspense>
-      <InviteBanner />
-      <InstallHint />
-    </InviteGate>
+    <ErrorBoundary>
+      <InviteGate>
+        <Suspense fallback={<RouteFallback />}>
+          <Routes>
+            <Route path="/" element={<MapPage />} />
+            <Route path="/capture" element={<CaptureFlow />} />
+            <Route path="/report/:id" element={<ReportDetail />} />
+            <Route path="/reports" element={<ReportsList />} />
+            <Route path="/about" element={<AboutPage />} />
+          </Routes>
+        </Suspense>
+        <InviteBanner />
+        <InstallHint />
+      </InviteGate>
+    </ErrorBoundary>
   );
 }
