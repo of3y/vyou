@@ -41,7 +41,7 @@ Deno.serve(async (req) => {
 });
 
 async function handle(req: Request): Promise<Response> {
-  const invite = await requireInvite(req, supabase);
+  const invite = await requireInvite(req, supabase, { countAsUse: true });
   if (!invite.ok) return jsonResponse({ error: invite.error }, invite.status);
 
   let classification_id: string | undefined;
