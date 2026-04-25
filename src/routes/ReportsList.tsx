@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { inviteHeaders } from "../lib/invite";
+import { getReport, listReports } from "../lib/api";
 import type { Classification, Report, VerifiedReport } from "../lib/types";
 import { prettyPhenomenon } from "../lib/format";
 
@@ -22,62 +23,30 @@ export default function ReportsList() {
 
   const load = useCallback(async () => {
     setLoadError(null);
-    const { data: reports, error: repErr } = await supabase
-      .from("reports_v")
-      .select("*")
-      .order("submitted_at", { ascending: false })
-      .limit(LIMIT);
-    if (repErr) {
-      setLoadError(repErr.message);
+    setPartialError(null);
+    const { data, error } = await listReports({ limit: LIMIT });
+    if (error || !data) {
+      setLoadError(error ?? "Could not load reports");
       return;
     }
-    const reportList = (reports ?? []) as Report[];
-    if (reportList.length === 0) {
-      setRows([]);
-      return;
-    }
-    const ids = reportList.map((r) => r.id);
-
-    const [clsRes, verRes] = await Promise.all([
-      supabase
-        .from("classifications")
-        .select("*")
-        .eq("agent", "classifier")
-        .in("report_id", ids)
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("verified_reports")
-        .select("*")
-        .in("report_id", ids)
-        .order("created_at", { ascending: false }),
-    ]);
-
-    // Partial-load warnings: reports loaded, but classifications or verdicts
-    // failed to fetch. Surface the failure rather than rendering the gap as
-    // "awaiting classification" / "no verdict".
-    const partialErrors: string[] = [];
-    if (clsRes.error) partialErrors.push(`classifications: ${clsRes.error.message}`);
-    if (verRes.error) partialErrors.push(`verified reports: ${verRes.error.message}`);
-    setPartialError(partialErrors.length ? partialErrors.join(" · ") : null);
-
-    const classifications = (clsRes.data ?? []) as Classification[];
-    const verifieds = (verRes.data ?? []) as VerifiedReport[];
-
-    const clsByReport = new Map<string, Classification>();
-    for (const c of classifications) {
-      if (!clsByReport.has(c.report_id)) clsByReport.set(c.report_id, c);
-    }
-    const verByClassification = new Map<string, VerifiedReport>();
-    for (const v of verifieds) {
-      if (!verByClassification.has(v.classification_id)) verByClassification.set(v.classification_id, v);
-    }
-
     setRows(
-      reportList.map((report) => {
-        const cls = clsByReport.get(report.id) ?? null;
-        const ver = cls ? verByClassification.get(cls.id) ?? null : null;
-        return { report, classification: cls, verified: ver };
-      }),
+      data.reports.map((r) => ({
+        report: {
+          id: r.id,
+          reporter_id: r.reporter_id,
+          photo_url: r.photo_url,
+          lon: r.lon,
+          lat: r.lat,
+          heading_degrees: r.heading_degrees,
+          location_accuracy_m: r.location_accuracy_m,
+          captured_at: r.captured_at,
+          submitted_at: r.submitted_at,
+          caption: r.caption,
+          status: r.status,
+        } as Report,
+        classification: r.classification as Classification | null,
+        verified: r.verified as VerifiedReport | null,
+      })),
     );
   }, []);
 
@@ -101,17 +70,14 @@ export default function ReportsList() {
         setActionError(`Re-run failed for ${row.report.id.slice(0, 8)}: ${error.message}`);
       }
       // Poll briefly for the fresh row before refreshing the whole list.
+      // get-report returns the latest verified row alongside the report so we
+      // can detect the rerun result without a direct verified_reports read.
       const started = Date.now();
       while (Date.now() - started < 180_000) {
         await new Promise((r) => setTimeout(r, 3000));
-        const { data } = await supabase
-          .from("verified_reports")
-          .select("*")
-          .eq("classification_id", cid)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        if (data && data.id !== row.verified?.id) break;
+        const { data } = await getReport(row.report.id);
+        const fresh = data?.verified;
+        if (fresh && fresh.id !== row.verified?.id) break;
       }
       await load();
     } finally {

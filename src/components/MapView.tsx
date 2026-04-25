@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import maplibregl from "maplibre-gl";
 import type { Feature, FeatureCollection, Polygon } from "geojson";
-import { supabase } from "../lib/supabase";
+import { listReports } from "../lib/api";
 import { coneFeature } from "../lib/cone";
 import {
   DWD_RADAR_LAYER_ID,
@@ -72,26 +72,32 @@ type ReportRow = {
 type TimedConeFeature = Feature<Polygon, { id: string; status: string; captured_at: number }>;
 
 async function fetchConeFeatures(): Promise<TimedConeFeature[]> {
-  const since = new Date(Date.now() - CONE_FETCH_LOOKBACK_MS).toISOString();
-  const { data, error } = await supabase
-    .from("reports_v")
-    .select("id, lon, lat, heading_degrees, status, captured_at")
-    .in("status", ["accepted", "pending"])
-    .gte("captured_at", since)
-    .order("captured_at", { ascending: false })
-    .limit(500);
+  const { data, error } = await listReports({
+    since_ms: CONE_FETCH_LOOKBACK_MS,
+    limit: 500,
+  });
 
-  if (error) {
+  if (error || !data) {
     console.error("[VYou] fetch reports failed", error);
     return [];
   }
 
-  return (data as ReportRow[]).map((r) => {
-    const f = coneFeature(r.lon, r.lat, r.heading_degrees, {
-      properties: { id: r.id, status: r.status, captured_at: Date.parse(r.captured_at) },
+  return data.reports
+    .filter((r) => r.status === "accepted" || r.status === "pending")
+    .map((r) => {
+      const row: ReportRow = {
+        id: r.id,
+        lon: r.lon,
+        lat: r.lat,
+        heading_degrees: r.heading_degrees,
+        status: r.status,
+        captured_at: r.captured_at,
+      };
+      const f = coneFeature(row.lon, row.lat, row.heading_degrees, {
+        properties: { id: row.id, status: row.status, captured_at: Date.parse(row.captured_at) },
+      });
+      return f as TimedConeFeature;
     });
-    return f as TimedConeFeature;
-  });
 }
 
 function filterCones(features: TimedConeFeature[], time: LayerTime): FeatureCollection<Polygon> {

@@ -3,6 +3,7 @@ import { Route, Routes } from "react-router-dom";
 
 import InstallHint from "./components/InstallHint";
 import InviteBanner from "./components/InviteBanner";
+import InviteGate from "./components/InviteGate";
 import { captureInviteFromUrl } from "./lib/invite";
 
 const MapPage = lazy(() => import("./routes/MapPage"));
@@ -25,7 +26,7 @@ export default function App() {
   }, []);
 
   return (
-    <>
+    <InviteGate>
       <Suspense fallback={<RouteFallback />}>
         <Routes>
           <Route path="/" element={<MapPage />} />
@@ -37,6 +38,6 @@ export default function App() {
       </Suspense>
       <InviteBanner />
       <InstallHint />
-    </>
+    </InviteGate>
   );
 }

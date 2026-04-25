@@ -4,6 +4,7 @@ import { supabase } from "../lib/supabase";
 import MapView from "../components/MapView";
 import type { Brief, BriefSource, Classification, Confidence, EarnedQuestion, Report, SessionStats, VerifiedReport } from "../lib/types";
 import { inviteHeaders } from "../lib/invite";
+import { getReport } from "../lib/api";
 import { prettyPhenomenon } from "../lib/format";
 import { getReporterId } from "../lib/reporter";
 
@@ -41,12 +42,15 @@ export default function ReportDetail() {
   useEffect(() => {
     if (!id) return;
     (async () => {
-      const { data, error } = await supabase.from("reports_v").select("*").eq("id", id).single();
-      if (error) {
-        setError(error.message);
+      const { data, error } = await getReport(id, getReporterId());
+      if (error || !data) {
+        setError(error ?? "Could not load report");
         return;
       }
-      setReport(data as Report);
+      setReport(data.report);
+      if (data.classification) setClassification(data.classification);
+      if (data.verified) setVerified(data.verified);
+      if (data.brief) setBrief(data.brief);
     })();
   }, [id]);
 
@@ -59,17 +63,10 @@ export default function ReportDetail() {
 
     async function tick() {
       if (cancelled) return;
-      const { data } = await supabase
-        .from("classifications")
-        .select("*")
-        .eq("report_id", id)
-        .eq("agent", "classifier")
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const { data } = await getReport(id!, getReporterId());
       if (cancelled) return;
-      if (data) {
-        setClassification(data as Classification);
+      if (data?.classification) {
+        setClassification(data.classification);
         return;
       }
       // On first poll pass, dispatch classify if no existing row and we
@@ -139,21 +136,20 @@ export default function ReportDetail() {
     }
 
     (async () => {
-      const { data } = await supabase
-        .from("verified_reports")
-        .select("*")
-        .eq("classification_id", cid)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      // get-report returns the latest verified row alongside the report; if
+      // we already received it via the initial load we'd have set state. This
+      // recheck handles the case where classification arrives before verified.
+      const { data } = await getReport(report?.id ?? cid, getReporterId());
       if (cancelled) return;
-      if (data) setVerified(data as VerifiedReport);
+      if (data?.verified && data.verified.classification_id === cid) {
+        setVerified(data.verified);
+      }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [classification]);
+  }, [classification, report?.id]);
 
   const [verifyAttempt, setVerifyAttempt] = useState(0);
 
@@ -218,16 +214,10 @@ export default function ReportDetail() {
 
     async function poll() {
       if (cancelled) return;
-      const { data } = await supabase
-        .from("verified_reports")
-        .select("*")
-        .eq("classification_id", cid)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const { data } = await getReport(report?.id ?? cid, getReporterId());
       if (cancelled) return;
-      if (data) {
-        setVerified(data as VerifiedReport);
+      if (data?.verified && data.verified.classification_id === cid) {
+        setVerified(data.verified);
         return;
       }
       if (Date.now() - startedAt > RECONCILE_POLL_TIMEOUT_MS) {
@@ -269,11 +259,9 @@ export default function ReportDetail() {
     async function tick() {
       if (cancelled) return;
       try {
-        const { data, error } = await supabase
-          .from("profiles")
-          .select("reporter_id, questions_earned, questions_used")
-          .eq("reporter_id", reporterId)
-          .maybeSingle();
+        // get-report returns the profile keyed on reporter_id alongside the
+        // report payload; one invoke replaces the direct profiles read.
+        const { data, error } = await getReport(id!, reporterId);
         if (cancelled) return;
         if (error) {
           // Migration not applied or transient RLS/network hiccup. Mark as
@@ -282,8 +270,9 @@ export default function ReportDetail() {
           setProfileMissing(true);
         } else {
           setProfileMissing(false);
-          const next: EarnedQuestion = data
-            ? (data as EarnedQuestion)
+          const profileRow = data?.profile ?? null;
+          const next: EarnedQuestion = profileRow
+            ? (profileRow as EarnedQuestion)
             : { reporter_id: reporterId, questions_earned: 0, questions_used: 0 };
           setProfile((prev) => {
             const prevEarned = lastEarnedRef.current ?? prev?.questions_earned ?? next.questions_earned;
@@ -339,26 +328,8 @@ export default function ReportDetail() {
   const [askError, setAskError] = useState<string | null>(null);
   const [brief, setBrief] = useState<Brief | null>(null);
 
-  // Load any existing brief for this report (most-recent wins). Lets a
-  // returning visitor see the answer they already paid for.
-  useEffect(() => {
-    if (!id) return;
-    let cancelled = false;
-    (async () => {
-      const { data } = await supabase
-        .from("briefs")
-        .select("id, report_id, verified_report_id, question, content, sources, created_at")
-        .eq("report_id", id)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (cancelled) return;
-      if (data) setBrief(data as Brief);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [id]);
+  // The initial useEffect on `id` already seeds brief from getReport. No
+  // separate read needed — research-poll below picks up new briefs.
 
   const submitQuestion = useCallback(async () => {
     if (!id) return;
@@ -411,15 +382,10 @@ export default function ReportDetail() {
     const startedAt = Date.now();
     async function poll() {
       if (respondedSync) return;
-      const { data } = await supabase
-        .from("briefs")
-        .select("id, report_id, verified_report_id, question, content, sources, created_at")
-        .eq("report_id", id)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (data && (!brief || (data as Brief).id !== brief.id)) {
-        setBrief(data as Brief);
+      const { data } = await getReport(id, reporterId);
+      const fresh = data?.brief;
+      if (fresh && (!brief || fresh.id !== brief.id)) {
+        setBrief(fresh);
         setAskPending(false);
         setAskText("");
         return;

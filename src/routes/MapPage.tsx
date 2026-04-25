@@ -4,7 +4,7 @@ import MapView, { type LayerVisibility } from "../components/MapView";
 import LayerSwitcher from "../components/MapControls/LayerSwitcher";
 import TimeSlider from "../components/MapControls/TimeSlider";
 import type { LayerTime } from "../lib/layers/dwdRadar";
-import { supabase } from "../lib/supabase";
+import { listReports } from "../lib/api";
 import { getReporterId } from "../lib/reporter";
 
 const DEFAULT_VISIBILITY: LayerVisibility = {
@@ -28,31 +28,21 @@ export default function MapPage() {
     const reporterId = getReporterId();
 
     async function loadAskState() {
-      const profilePromise = supabase
-        .from("profiles")
-        .select("questions_earned, questions_used")
-        .eq("reporter_id", reporterId)
-        .maybeSingle();
-      const recentMatchPromise = supabase
-        .from("verified_reports")
-        .select("report_id, created_at, reports!inner(reporter_id)")
-        .eq("verdict", "match")
-        .eq("reports.reporter_id", reporterId)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      // list-reports returns both the recent reports + the profile keyed on
+      // reporter_id, so we can derive questions_available and the most recent
+      // owned match-verified report from a single invoke.
+      const { data } = await listReports({ reporter_id: reporterId, limit: 100 });
+      if (cancelled || !data) return;
 
-      const [{ data: profile }, { data: match }] = await Promise.all([
-        profilePromise,
-        recentMatchPromise,
-      ]);
-      if (cancelled) return;
-
-      const available = profile
-        ? Math.max(0, (profile.questions_earned ?? 0) - (profile.questions_used ?? 0))
+      const available = data.profile
+        ? Math.max(0, (data.profile.questions_earned ?? 0) - (data.profile.questions_used ?? 0))
         : 0;
       setQuestionsAvailable(available);
-      setAskTargetReportId((match as { report_id: string } | null)?.report_id ?? null);
+
+      const ownMatch = data.reports.find(
+        (r) => r.reporter_id === reporterId && r.verified?.verdict === "match",
+      );
+      setAskTargetReportId(ownMatch?.id ?? null);
     }
 
     loadAskState();

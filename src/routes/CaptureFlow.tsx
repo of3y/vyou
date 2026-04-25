@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { supabase } from "../lib/supabase";
+import { submitReport } from "../lib/api";
 import { getReporterId } from "../lib/reporter";
 import { inviteHeaders } from "../lib/invite";
 import {
@@ -115,22 +116,19 @@ export default function CaptureFlow() {
 
       const { data: publicUrl } = supabase.storage.from("photos").getPublicUrl(storagePath);
 
-      const { data, error } = await supabase
-        .from("reports")
-        .insert({
-          reporter_id: reporterId,
-          photo_url: publicUrl.publicUrl,
-          location: `POINT(${capture.lon} ${capture.lat})`,
-          heading_degrees: heading,
-          location_accuracy_m: capture.accuracyM,
-          captured_at: capture.capturedAt,
-          caption: caption.trim() || null,
-          status: "accepted",
-        })
-        .select("id")
-        .single();
+      const { data, error } = await submitReport({
+        reporter_id: reporterId,
+        photo_url: publicUrl.publicUrl,
+        lon: capture.lon,
+        lat: capture.lat,
+        heading_degrees: heading,
+        location_accuracy_m: capture.accuracyM,
+        captured_at: capture.capturedAt,
+        caption: caption.trim() || null,
+        status: "accepted",
+      });
 
-      if (error) throw error;
+      if (error || !data) throw new Error(error ?? "submit failed");
       toast.success("Report submitted");
       supabase.functions
         .invoke("classify", { body: { report_id: data.id }, headers: inviteHeaders() })
