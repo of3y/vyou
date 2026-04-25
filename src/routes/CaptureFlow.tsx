@@ -446,7 +446,7 @@ function CameraStep({
   // just that the phone is tilted. If the orientation sensor never fired
   // (or permission was denied) we don't gate capture — heading-step manual
   // entry still works.
-  const TILT_TOLERANCE = 10;
+  const TILT_TOLERANCE = 25;
   const pitchOff = tilt ? tilt.beta - 90 : 0;
   const rollOff = tilt ? tilt.gamma : 0;
   const tiltOK = !tilt || (Math.abs(pitchOff) < TILT_TOLERANCE && Math.abs(rollOff) < TILT_TOLERANCE);
