@@ -1,15 +1,63 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import maplibregl from "maplibre-gl";
-import type { FeatureCollection, Polygon } from "geojson";
+import type { Feature, FeatureCollection, Polygon } from "geojson";
 import { supabase } from "../lib/supabase";
 import { coneFeature } from "../lib/cone";
+import {
+  DWD_RADAR_LAYER_ID,
+  DWD_RADAR_SOURCE_ID,
+  dwdRadarLayer,
+  dwdRadarSource,
+  setDwdRadarTime,
+  type LayerTime,
+} from "../lib/layers/dwdRadar";
+import {
+  MTG_IR_LAYER_ID,
+  MTG_IR_SOURCE_ID,
+  mtgIRLayer,
+  mtgIRSource,
+  setMtgIRTime,
+} from "../lib/layers/mtgIR";
+import {
+  MTG_LIGHTNING_LAYER_ID,
+  MTG_LIGHTNING_SOURCE_ID,
+  mtgLightningLayer,
+  mtgLightningSource,
+  setMtgLightningTime,
+} from "../lib/layers/mtgLightning";
 
 const MUNICH: [number, number] = [11.582, 48.1351];
+
+const CONE_WINDOW_MS = 2 * 60 * 60 * 1000;
+const CONE_FETCH_LOOKBACK_MS = 4 * 60 * 60 * 1000;
+
+const CONE_FILL_LAYER_ID = "report-cones-fill";
+const CONE_OUTLINE_LAYER_ID = "report-cones-outline";
+const CONE_SOURCE_ID = "report-cones";
+
+const BASEMAP_SOURCE_ID = "carto-dark";
+const BASEMAP_LAYER_ID = "carto-dark-layer";
+
+export type LayerVisibility = {
+  cones: boolean;
+  radar: boolean;
+  lightning: boolean;
+  ir: boolean;
+};
+
+const DEFAULT_VISIBILITY: LayerVisibility = {
+  cones: true,
+  radar: true,
+  lightning: true,
+  ir: false,
+};
 
 type Props = {
   center?: [number, number];
   zoom?: number;
   className?: string;
+  currentTime?: LayerTime;
+  layerVisibility?: LayerVisibility;
 };
 
 type ReportRow = {
@@ -18,34 +66,68 @@ type ReportRow = {
   lat: number;
   heading_degrees: number;
   status: string;
+  captured_at: string;
 };
 
-async function fetchConeFeatures(): Promise<FeatureCollection<Polygon>> {
+type TimedConeFeature = Feature<Polygon, { id: string; status: string; captured_at: number }>;
+
+async function fetchConeFeatures(): Promise<TimedConeFeature[]> {
+  const since = new Date(Date.now() - CONE_FETCH_LOOKBACK_MS).toISOString();
   const { data, error } = await supabase
     .from("reports_v")
-    .select("id, lon, lat, heading_degrees, status")
+    .select("id, lon, lat, heading_degrees, status, captured_at")
     .in("status", ["accepted", "pending"])
-    .order("submitted_at", { ascending: false })
-    .limit(200);
+    .gte("captured_at", since)
+    .order("captured_at", { ascending: false })
+    .limit(500);
 
   if (error) {
     console.error("[VYou] fetch reports failed", error);
-    return { type: "FeatureCollection", features: [] };
+    return [];
   }
 
-  const features = (data as ReportRow[]).map((r) =>
-    coneFeature(r.lon, r.lat, r.heading_degrees, {
-      properties: { id: r.id, status: r.status },
-    }),
-  );
-  return { type: "FeatureCollection", features };
+  return (data as ReportRow[]).map((r) => {
+    const f = coneFeature(r.lon, r.lat, r.heading_degrees, {
+      properties: { id: r.id, status: r.status, captured_at: Date.parse(r.captured_at) },
+    });
+    return f as TimedConeFeature;
+  });
 }
 
-export default function MapView({ center, zoom, className }: Props) {
+function filterCones(features: TimedConeFeature[], time: LayerTime): FeatureCollection<Polygon> {
+  const upper = time === "live" ? Date.now() : time.getTime();
+  const lower = upper - CONE_WINDOW_MS;
+  return {
+    type: "FeatureCollection",
+    features: features.filter(
+      (f) => f.properties.captured_at >= lower && f.properties.captured_at <= upper,
+    ),
+  };
+}
+
+function visibilityValue(on: boolean): "visible" | "none" {
+  return on ? "visible" : "none";
+}
+
+export default function MapView({
+  center,
+  zoom,
+  className,
+  currentTime,
+  layerVisibility,
+}: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const initialCenter = useRef(center ?? MUNICH);
   const initialZoom = useRef(zoom ?? 9);
+  const conesRef = useRef<TimedConeFeature[]>([]);
+  const loadedRef = useRef(false);
+
+  const time: LayerTime = currentTime ?? "live";
+  const visibility = useMemo<LayerVisibility>(
+    () => layerVisibility ?? DEFAULT_VISIBILITY,
+    [layerVisibility],
+  );
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -56,24 +138,30 @@ export default function MapView({ center, zoom, className }: Props) {
       style: {
         version: 8,
         sources: {
-          osm: {
-            type: "raster",
-            tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
-            tileSize: 256,
-            attribution: "© OpenStreetMap contributors",
-          },
-          radolan: {
+          [BASEMAP_SOURCE_ID]: {
             type: "raster",
             tiles: [
-              "https://maps.dwd.de/geoserver/dwd/wms?service=WMS&request=GetMap&layers=dwd:Niederschlagsradar&styles=&format=image/png&transparent=true&version=1.1.1&srs=EPSG:3857&bbox={bbox-epsg-3857}&width=256&height=256",
+              "https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
+              "https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
+              "https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
+              "https://d.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
             ],
             tileSize: 256,
-            attribution: "© DWD RADOLAN",
+            attribution:
+              '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>',
           },
+          [DWD_RADAR_SOURCE_ID]: dwdRadarSource(time),
+          [MTG_LIGHTNING_SOURCE_ID]: mtgLightningSource(time),
+          [MTG_IR_SOURCE_ID]: mtgIRSource(time),
         },
         layers: [
-          { id: "osm", type: "raster", source: "osm" },
-          { id: "radolan", type: "raster", source: "radolan", paint: { "raster-opacity": 0.55 } },
+          { id: BASEMAP_LAYER_ID, type: "raster", source: BASEMAP_SOURCE_ID },
+          { ...mtgIRLayer, layout: { visibility: visibilityValue(visibility.ir) } },
+          { ...dwdRadarLayer, layout: { visibility: visibilityValue(visibility.radar) } },
+          {
+            ...mtgLightningLayer,
+            layout: { visibility: visibilityValue(visibility.lightning) },
+          },
         ],
       },
       center: initialCenter.current,
@@ -82,46 +170,45 @@ export default function MapView({ center, zoom, className }: Props) {
 
     map.addControl(new maplibregl.NavigationControl({ showCompass: true }), "top-right");
     map.addControl(
-      new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: true }),
+      new maplibregl.GeolocateControl({
+        positionOptions: { enableHighAccuracy: true },
+        trackUserLocation: true,
+      }),
       "top-right",
     );
     map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-left");
 
     map.on("load", async () => {
-      map.addSource("report-cones", {
+      map.addSource(CONE_SOURCE_ID, {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
       });
 
       map.addLayer({
-        id: "report-cones-fill",
+        id: CONE_FILL_LAYER_ID,
         type: "fill",
-        source: "report-cones",
-        paint: {
-          "fill-color": "#10b981",
-          "fill-opacity": 0.25,
-        },
+        source: CONE_SOURCE_ID,
+        layout: { visibility: visibilityValue(visibility.cones) },
+        paint: { "fill-color": "#10b981", "fill-opacity": 0.25 },
       });
-
       map.addLayer({
-        id: "report-cones-outline",
+        id: CONE_OUTLINE_LAYER_ID,
         type: "line",
-        source: "report-cones",
-        paint: {
-          "line-color": "#10b981",
-          "line-width": 1.5,
-          "line-opacity": 0.8,
-        },
+        source: CONE_SOURCE_ID,
+        layout: { visibility: visibilityValue(visibility.cones) },
+        paint: { "line-color": "#10b981", "line-width": 1.5, "line-opacity": 0.8 },
       });
 
-      const features = await fetchConeFeatures();
-      const source = map.getSource("report-cones") as maplibregl.GeoJSONSource | undefined;
-      source?.setData(features);
+      conesRef.current = await fetchConeFeatures();
+      const source = map.getSource(CONE_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
+      source?.setData(filterCones(conesRef.current, time));
+      loadedRef.current = true;
     });
 
     mapRef.current = map;
 
     return () => {
+      loadedRef.current = false;
       map.remove();
       mapRef.current = null;
     };
@@ -140,6 +227,46 @@ export default function MapView({ center, zoom, className }: Props) {
     if (!map || zoom == null) return;
     map.setZoom(zoom);
   }, [zoom]);
+
+  // Push time changes to all time-indexed layers + cone filter.
+  const timeKey = time === "live" ? "live" : time.toISOString();
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !loadedRef.current) return;
+    setDwdRadarTime(map, time);
+    setMtgIRTime(map, time);
+    setMtgLightningTime(map, time);
+    const source = map.getSource(CONE_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
+    source?.setData(filterCones(conesRef.current, time));
+  }, [timeKey]);
+
+  // Push visibility changes.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const apply = () => {
+      try {
+        map.setLayoutProperty(CONE_FILL_LAYER_ID, "visibility", visibilityValue(visibility.cones));
+        map.setLayoutProperty(
+          CONE_OUTLINE_LAYER_ID,
+          "visibility",
+          visibilityValue(visibility.cones),
+        );
+        map.setLayoutProperty(DWD_RADAR_LAYER_ID, "visibility", visibilityValue(visibility.radar));
+        map.setLayoutProperty(
+          MTG_LIGHTNING_LAYER_ID,
+          "visibility",
+          visibilityValue(visibility.lightning),
+        );
+        map.setLayoutProperty(MTG_IR_LAYER_ID, "visibility", visibilityValue(visibility.ir));
+      } catch {
+        // Layers may not yet exist if load hasn't fired; the load handler
+        // sets initial visibility, so this is safe to ignore.
+      }
+    };
+    if (loadedRef.current) apply();
+    else map.once("load", apply);
+  }, [visibility.cones, visibility.radar, visibility.lightning, visibility.ir]);
 
   return <div ref={containerRef} className={className ?? "h-full w-full"} />;
 }
