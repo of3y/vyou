@@ -3,6 +3,7 @@ import Anthropic from "npm:@anthropic-ai/sdk@0.91.0";
 import { buildSessionStats, RECONCILIATION_MODEL } from "../_shared/cost.ts";
 import { radolanFrameForReport } from "../_shared/radolan.ts";
 import { requireInvite } from "../_shared/invite.ts";
+import { extractJson } from "../_shared/extractJson.ts";
 import { fetchMtgFrame, fetchOpenMeteo, openMeteoSummary } from "../_shared/feeds.ts";
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
@@ -347,10 +348,3 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-function extractJson(text: string): Record<string, unknown> | null {
-  try {
-    return JSON.parse(text.trim());
-  } catch {
-    return null;
-  }
-}

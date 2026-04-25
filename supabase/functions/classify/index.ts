@@ -2,6 +2,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import Anthropic from "npm:@anthropic-ai/sdk@0.91.0";
 import { buildSessionStats, CLASSIFIER_MODEL } from "../_shared/cost.ts";
 import { requireInvite } from "../_shared/invite.ts";
+import { extractJson } from "../_shared/extractJson.ts";
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
@@ -202,10 +203,3 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-function extractJson(text: string): Record<string, unknown> | null {
-  try {
-    return JSON.parse(text.trim());
-  } catch {
-    return null;
-  }
-}
