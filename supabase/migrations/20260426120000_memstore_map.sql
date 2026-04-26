@@ -15,13 +15,19 @@
 -- Service role only; anon has no read access. The store ids and names are
 -- not user-facing.
 
+-- reporter_id is `text` here to match the rest of the schema —
+-- public.reports.reporter_id, public.profiles.reporter_id, and
+-- public.briefs.reporter_id are all text. The runtime value is a
+-- UUID-shaped string from getReporterId() / crypto.randomUUID(), but the
+-- column type stays text so an implicit cast can never fail at insert time
+-- and the schema reads consistently.
 create table if not exists public.memstore_map (
   key          text        primary key,
   store_id     text        not null unique,
   store_name   text        not null,
   scope        text        not null check (scope in ('location', 'user')),
   geohash6     text,
-  reporter_id  uuid,
+  reporter_id  text,
   created_at   timestamptz not null default now(),
   last_seen_at timestamptz not null default now(),
   constraint memstore_map_scope_fields check (
