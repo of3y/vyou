@@ -77,6 +77,12 @@ type ReportRow = {
 
 type TimedConeFeature = Feature<Polygon, { id: string; status: string; captured_at: number }>;
 
+// Module-scope cache survives MapView remounts within the same SPA session.
+// On return-to-map, the previous cones paint immediately from this cache
+// while a fresh fetch refreshes them in the background — eliminates the
+// blank-cones flash Daniel was seeing under slow-network reconnects.
+let lastConeCache: TimedConeFeature[] | null = null;
+
 async function fetchConeFeatures(): Promise<TimedConeFeature[]> {
   const { data, error } = await listReports({
     since_ms: CONE_FETCH_LOOKBACK_MS,
@@ -85,10 +91,11 @@ async function fetchConeFeatures(): Promise<TimedConeFeature[]> {
 
   if (error || !data) {
     console.error("[VYou] fetch reports failed", error);
-    return [];
+    // Preserve the cache on transient failure rather than zeroing the map.
+    return lastConeCache ?? [];
   }
 
-  return data.reports
+  const features = data.reports
     .filter((r) => r.status === "accepted" || r.status === "pending")
     .map((r) => {
       const row: ReportRow = {
@@ -104,6 +111,12 @@ async function fetchConeFeatures(): Promise<TimedConeFeature[]> {
       });
       return f as TimedConeFeature;
     });
+  lastConeCache = features;
+  return features;
+}
+
+function getCachedCones(): TimedConeFeature[] {
+  return lastConeCache ?? [];
 }
 
 function filterCones(
@@ -280,8 +293,16 @@ export default function MapView({
         },
       });
 
-      conesRef.current = await fetchConeFeatures();
+      // Paint cached cones immediately so the user sees the previous state
+      // on return-to-map. Fresh fetch refreshes them when the network call
+      // lands; the source.setData call is idempotent.
       const source = map.getSource(CONE_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
+      const cachedCones = getCachedCones();
+      if (cachedCones.length > 0) {
+        conesRef.current = cachedCones;
+        source?.setData(filterCones(cachedCones, time, effectiveWindowMs));
+      }
+      conesRef.current = await fetchConeFeatures();
       source?.setData(filterCones(conesRef.current, time, effectiveWindowMs));
       loadedRef.current = true;
 
