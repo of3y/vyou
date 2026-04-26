@@ -16,7 +16,7 @@ VYou's hero loop turns a sky photo into a verified, directional weather report o
 
 ## Quick orientation
 
-The Classifier agent returns a structured JSON record with four fields — `phenomenon`, `features`, `hail_size_cm`, `confidence` — plus an `out_of_scope` escape hatch for non-weather images. The downstream agents (Reconciliation, Deep Researcher, Verification) read those fields and this skill in parallel to judge whether the record is consistent with radar/satellite evidence and nearby community reports.
+The Classifier agent returns a structured JSON record with five fields — `phenomenon`, `features`, `hail_size_cm`, `confidence`, and a `safe` boolean moderation flag — plus an `out_of_scope` escape hatch for non-weather images. See `references/rubrics.md` §Safety flag for when `safe: false` is the right call. The downstream agents (Reconciliation, Deep Researcher, Verification) read those fields and this skill in parallel to judge whether the record is consistent with radar/satellite evidence and nearby community reports.
 
 For the exact JSON output contract, see `scripts/cma-setup-classifier.mjs` in the repo root — the system prompt there carries the schema and behavior contract, while this skill carries the taxonomy and rubrics the contract references.
 

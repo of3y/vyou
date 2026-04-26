@@ -72,7 +72,7 @@ async function handle(req: Request): Promise<Response> {
   // report, return it rather than opening a second paid session.
   const { data: existingClassification } = await supabase
     .from("classifications")
-    .select("id, phenomenon, features, confidence, hail_size_cm, session_stats")
+    .select("id, phenomenon, features, confidence, hail_size_cm, safe, session_stats")
     .eq("report_id", report_id)
     .eq("agent", "classifier")
     .order("created_at", { ascending: false })
@@ -188,6 +188,12 @@ async function handle(req: Request): Promise<Response> {
     return jsonResponse({ error: "agent did not return parseable JSON", transcript }, 502);
   }
 
+  // `safe` defaults to true for back-compat with the pre-Fix-C agent shape
+  // that doesn't emit the field. The redeployed agent (post-Fix-C) returns
+  // `false` for moderation-rejected submissions; the UI surfaces a distinct
+  // *couldn't add this photo* toast and we drop the report from the map.
+  const safe = typeof parsed.safe === "boolean" ? parsed.safe : true;
+
   const classification = await upsertClassification({
     report_id,
     agent: "classifier",
@@ -195,16 +201,33 @@ async function handle(req: Request): Promise<Response> {
     features: Array.isArray(parsed.features) ? parsed.features : null,
     hail_size_cm: typeof parsed.hail_size_cm === "number" ? parsed.hail_size_cm : null,
     confidence: ["low", "medium", "high"].includes(parsed.confidence) ? parsed.confidence : null,
+    safe,
     session_stats: sessionStats,
   });
+
+  if (!safe) {
+    // Drop the report from the shared map by flipping the row to `rejected`.
+    // The status check column already exists; the cone fetch in MapView
+    // filters on `accepted | pending`. The auditable record stays in the
+    // database for the reporter to see on their own report page.
+    const { error: rejectErr } = await supabase
+      .from("reports")
+      .update({ status: "rejected" })
+      .eq("id", report_id);
+    if (rejectErr) {
+      console.warn(`[classify] reject status update failed for ${report_id}: ${rejectErr.message}`);
+    }
+  }
 
   // Hardened-plan v2 §1 Correction 1 — auto-fire reconcile so the user is
   // never asked to tap *Verify against radar*. The unawaited invoke is wrapped
   // in EdgeRuntime.waitUntil so Deno Deploy keeps the request alive past the
   // response we are about to send. Skipped for out-of-scope/tester-selfie
-  // reads (radar comparison doesn't apply) and for the cached short-circuit
-  // (the reconcile would have been fired on the first classify already).
+  // reads (radar comparison doesn't apply), unsafe submissions (Fix C — no
+  // paid session on rejected content), and for the cached short-circuit (the
+  // reconcile would have been fired on the first classify already).
   if (
+    safe &&
     classification?.id &&
     classification.phenomenon &&
     !SKIP_RECONCILE_PHENOMENA.has(classification.phenomenon)
@@ -243,7 +266,7 @@ async function upsertClassification(fields: Record<string, any>): Promise<any> {
   const { data, error } = await supabase
     .from("classifications")
     .upsert(fields, { onConflict: "report_id,agent" })
-    .select("id, phenomenon, features, confidence, hail_size_cm, session_stats")
+    .select("id, phenomenon, features, confidence, hail_size_cm, safe, session_stats")
     .single();
   if (error) throw new Error(`classifications upsert: ${error.message}`);
   return data;

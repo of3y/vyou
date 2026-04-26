@@ -23,7 +23,8 @@ Respond with EXACTLY one JSON object and nothing else. No prose, no markdown fen
   "phenomenon": "<one label from the skill's taxonomy, or \\"out_of_scope\\">",
   "features": ["<short phrase>", "<short phrase>", ...],
   "hail_size_cm": <number or null>,
-  "confidence": "low" | "medium" | "high"
+  "confidence": "low" | "medium" | "high",
+  "safe": true | false
 }
 
 # Behavior contract
@@ -33,7 +34,8 @@ Respond with EXACTLY one JSON object and nothing else. No prose, no markdown fen
 - Populate "hail_size_cm" ONLY under the two conditions named in the skill's hail-size rubric (references/rubrics.md): phenomenon is "hail" AND a scale reference is visible in the same frame. Otherwise null.
 - Default "confidence" to "medium" unless evidence is strong in either direction, per the skill's confidence rubric. Never emit numeric percentages.
 - For non-weather images, emit the out_of_scope record per the skill's out-of-scope rubric — do not force a weather label.
-- For closed-beta tester selfies (frame dominated by a smiling face or a group posing for the camera), emit the tester_selfie record per the skill's Tester-selfie rubric instead of out_of_scope. This is a demo-only label that earns the closed beta usable demo footage; it is removed post-hackathon.`;
+- For closed-beta tester selfies (frame dominated by a smiling face or a group posing for the camera), emit the tester_selfie record per the skill's Tester-selfie rubric instead of out_of_scope. This is a demo-only label that earns the closed beta usable demo footage; it is removed post-hackathon.
+- Default "safe" to true. Flip to false ONLY when the submission should not appear on a shared community map per the skill's Safety-flag rubric (references/rubrics.md §Safety flag): identifiable people without consent, NSFW or violent content, or images that cannot be a weather observation under any reading (lens-cap shots, finger-over-camera, unrelated screenshots). Selfies and out-of-scope records remain safe: true — that is the not-weather signal, not the moderation signal.`;
 
 const env = await client.beta.environments.create({
   name: `vyou-classifier-env-${Date.now()}`,

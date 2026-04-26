@@ -27,6 +27,29 @@ export function trackClassification(reportId: string): void {
       const { data } = await getReport(reportId, getReporterId());
       if (data?.classification) {
         inFlight.delete(reportId);
+        // Hardened-plan v2 §2 Fix C — distinct rejection toast when the
+        // classifier flips `safe: false`. The submission is dropped from the
+        // shared map server-side; the toast tells the reporter why and offers
+        // a Retake CTA so the loop closes cleanly. Out-of-scope and
+        // tester-selfie reads are still safe=true and surface as a normal
+        // "Classified" toast.
+        if (data.classification.safe === false) {
+          notify.warning(
+            "Couldn't add this photo — try a clearer view of the sky.",
+            {
+              duration: 10_000,
+              action: (
+                <Link
+                  to="/capture"
+                  className="rounded-full bg-white px-3 py-1 text-[12px] font-semibold text-black active:scale-95"
+                >
+                  Retake
+                </Link>
+              ),
+            },
+          );
+          return;
+        }
         notify.success(
           `Classified: ${prettyPhenomenon(data.classification.phenomenon)}`,
           {

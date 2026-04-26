@@ -35,6 +35,11 @@ export type Classification = {
   features: string[] | null;
   hail_size_cm: number | null;
   confidence: Confidence | null;
+  // Hardened-plan v2 §2 Fix C — moderation flag. Defaults to true; the
+  // post-Fix-C classifier returns false for submissions that should not
+  // appear on the shared map (NSFW, identifiable people without consent,
+  // sky photos with no usable weather signal, etc.).
+  safe: boolean;
   session_stats: SessionStats | null;
   created_at: string;
 };

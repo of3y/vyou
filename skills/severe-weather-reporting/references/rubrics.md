@@ -48,6 +48,18 @@ Common failure modes to avoid:
 
 Agents do not know the richness rating at inference time. The rubric is visible here so an agent operating in eval context understands why the high-vs-low gap is the load-bearing quality signal (see `docs/validation-plan.md` thresholds — `≥ 0.15` precision gap required).
 
+## Safety flag — `safe: boolean`
+
+Every record carries a `safe` boolean. Default to `true`. Flip to `false` ONLY for submissions that should not appear on a shared community map:
+
+- **Identifiable people without consent** — close-up of an unrelated person's face, license plate readable, a screen with personal information visible.
+- **NSFW or violent content** — anything that wouldn't pass a default-safe community-content bar.
+- **No usable signal at all** — entirely black frame, lens-cap shot, blurred to the point of unreadability, finger-over-camera, screenshot of unrelated UI. (Note: a *low-quality* sky photo still emits a weather record at `confidence: "low"` and stays `safe: true`. The bar for `safe: false` is "this image cannot be a weather observation under any reading.")
+
+Selfies and out-of-scope (houseplant, screenshot of weather text) stay `safe: true` — the `tester_selfie` and `out_of_scope` labels handle those without rejection. `safe: false` is the *moderation* signal, not the *not-weather* signal.
+
+When `safe` is `false`, populate the rest of the record with the most honest read available — `phenomenon: "out_of_scope"` and a one-phrase feature describing why is the usual fallback. The downstream pipeline drops the report from the map and surfaces a polite *couldn't add this photo* toast with a retake affordance.
+
 ## Out-of-scope escape hatch
 
 If the submitted image is not a sky or outdoor weather scene — a plant, a person, an indoor photo, an animal, text or a screenshot, an unrelated object — do not force a weather label. Emit the out-of-scope record instead:
@@ -57,7 +69,8 @@ If the submitted image is not a sky or outdoor weather scene — a plant, a pers
   "phenomenon": "out_of_scope",
   "features": ["<one short phrase describing what is in the image>"],
   "hail_size_cm": null,
-  "confidence": "high"
+  "confidence": "high",
+  "safe": true
 }
 ```
 
