@@ -253,7 +253,7 @@ export default function MapView({
           "fill-color": [
             "case",
             ["boolean", ["feature-state", "dimmed"], false], "#64748b",
-            "#34d399",
+            "#f5c049",
           ],
           "fill-opacity": [
             "case",
@@ -272,9 +272,9 @@ export default function MapView({
         paint: {
           "line-color": [
             "case",
-            ["boolean", ["feature-state", "active"], false], "#a7f3d0",
+            ["boolean", ["feature-state", "active"], false], "#fcd970",
             ["boolean", ["feature-state", "dimmed"], false], "#475569",
-            "#34d399",
+            "#f5c049",
           ],
           "line-width": [
             "case",
