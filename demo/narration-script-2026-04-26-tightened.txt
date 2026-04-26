@@ -1,0 +1,76 @@
+VYU narration — Script F, authenticity pass v2 for VO recording.
+Source: demo/narration-script-2026-04-26.txt (locked 2026-04-25 evening pass).
+Authenticity pass v2: 2026-04-26 — rewritten to the spine Daniel articulated out loud. Share a view; in return, ask about what is in it. One image is a small gesture, but it becomes a data point others draw on. Input side: Classifier reads the photo, Reconciliation verifies it. Output side: Deep Researcher composes everyone's data points into your answer. Beats intact. Filigree removed. Load-bearing phrases preserved: "memory box keyed to the place", "It inherits.", "A fair trade.", "VYU. What's in your view."
+Convention: one sentence per line. Paragraph break = beat boundary. All numbers spelled out. Em-dashes preserved as TTS pause markers. Parenthetical "(pause)" markers indicate ~0.8 second silences to splice in post-generation if the model compresses them. Do not feed the parentheticals to the TTS model — strip them or replace with extra punctuation.
+
+----- BEAT 1 — Cold open and problem statement (target 0:00–0:20) -----
+
+In my day job, I help weather satellites see better.
+From thirty-six thousand kilometers up, they hover above roughly the same place — and they monitor Europe's weather, all at once.
+But as far as they can see, they could not be further from seeing the weather in the eyes of us humans.
+Because the weather that matters to you, is the weather in your view.
+
+----- BEAT 2 — The transition (target 0:20–0:55) -----
+
+We carry billions of cameras in our pockets.
+What if sharing what you see earned you the right to ask about it?
+How is the swell today?
+What are the alpine conditions?
+Is there still snow on the lone summit?
+Weather apps make sense of millions of parameters.
+VYU uses those — and adds the view from where you stand, and from everyone standing somewhere else.
+
+----- BEAT 3 — Input side, the photo (target 0:55–1:15) -----
+
+Three Claude Managed Agents do the work — two when you submit, one when you ask.
+The Classifier reads your photo.
+It names what is in your view, and decides if it belongs on the map.
+
+----- BEAT 4 — Input side, reconciliation (target 1:15–1:38) -----
+
+Reconciliation runs alongside.
+It checks your photo against the radar, the satellite, and the official forecast — what agrees, what disagrees.
+What comes out is a verified report.
+It drops into a memory box keyed to the place — and the map now remembers what you, and others nearby, saw.
+
+----- BEAT 5 — Output side, Deep Researcher (target 1:38–2:00) -----
+
+When you ask, Deep Researcher reads everything — your report, the reports of others nearby, your own history with the map.
+If the answer mentions the cool wind off the lake, it is there because someone there felt it.
+The agent does not re-derive it.
+It inherits.
+
+----- BEAT 6 — The trade (target 2:00–2:25) -----
+
+You took a photo of your sky and asked where to find a beer.
+The map named the dark Doppelbock the place is known for — and warned you about the long sleeve, because someone behind the Heiliger Berg had felt the sun drop.
+You asked about a Turkish restaurant on holiday.
+The map told you about a waterfall eight kilometers away, because someone there had been.
+(pause)
+One photo.
+One question.
+A fair trade.
+
+----- BEAT 7 — Validation (target 2:25–2:45) -----
+
+This is the supervised benchmark.
+The Classifier hits these numbers on a held-out set — with the thresholds set before the runs, not after.
+We are not claiming it is perfect.
+We are claiming it is honest.
+
+----- BEAT 8 — Close (target 2:45–3:00) -----
+
+The satellites see the continent.
+The people see the moment.
+The map composes them.
+(pause)
+Share a view. Ask a question.
+VYU. What's in your view.
+
+----- DELTA from v1 tightened pass -----
+Beat 2: "Humanity carries around billions of mobile webcams" → "We carry billions of cameras in our pockets" (closer to spoken voice). Closing line of beat reframed to make the shared aspect explicit: "the view from where you stand, and from everyone standing somewhere else."
+Beat 3: "but on two clocks" rhetoric dropped — replaced with the plain mechanism: "two when you submit, one when you ask." Classifier sentence simplified — drops "the phenomenon, the features, the visible signal" enumeration; keeps "names what is in your view, and decides if it belongs on the map."
+Beat 4: minor — "Reconciliation runs next" → "Reconciliation runs alongside" (truer to the parallel-agents architecture).
+Beat 5: opening reworded for cadence — "When you ask a question, Deep Researcher" → "When you ask, Deep Researcher". "When the answer mentions the cool wind off the lake, that fact is there because someone else put it there" → "If the answer mentions the cool wind off the lake, it is there because someone there felt it." (concrete, embodied, shorter).
+Beat 6: unchanged — already concrete with "because someone there had felt it" / "because someone there had been".
+Beat 8: "Share a view. Get an answer." → "Share a view. Ask a question." — closes the loop the script opened in Beat 2 ("earned you the right to ask about it"), rather than introducing a new verb at the end.
