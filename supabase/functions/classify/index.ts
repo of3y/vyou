@@ -1,8 +1,23 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import Anthropic from "npm:@anthropic-ai/sdk@0.91.0";
 import { buildSessionStats, CLASSIFIER_MODEL } from "../_shared/cost.ts";
-import { requireInvite } from "../_shared/invite.ts";
+import { INVITE_HEADER, requireInvite } from "../_shared/invite.ts";
 import { extractJson } from "../_shared/extractJson.ts";
+
+// Phenomena that bypass radar reconciliation. Mirrors the local fallback in
+// ReportDetail.tsx: "out of scope" and "tester selfie" reads short-circuit to
+// inconclusive client-side, so spending a paid reconcile session on them is
+// pure waste.
+const SKIP_RECONCILE_PHENOMENA = new Set(["out_of_scope", "tester_selfie"]);
+
+// Deno-Deploy global; required to keep work alive past the response. An
+// unawaited fetch is best-effort and may be silently dropped.
+declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void } | undefined;
+function edgeWaitUntil(p: Promise<unknown>): void {
+  if (typeof EdgeRuntime !== "undefined" && EdgeRuntime?.waitUntil) {
+    EdgeRuntime.waitUntil(p);
+  }
+}
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
@@ -42,6 +57,7 @@ Deno.serve(async (req) => {
 async function handle(req: Request): Promise<Response> {
   const invite = await requireInvite(req, supabase, { countAsUse: true });
   if (!invite.ok) return jsonResponse({ error: invite.error }, invite.status);
+  const inviteToken = invite.token;
 
   let report_id: string | undefined;
   try {
@@ -182,7 +198,40 @@ async function handle(req: Request): Promise<Response> {
     session_stats: sessionStats,
   });
 
+  // Hardened-plan v2 §1 Correction 1 — auto-fire reconcile so the user is
+  // never asked to tap *Verify against radar*. The unawaited invoke is wrapped
+  // in EdgeRuntime.waitUntil so Deno Deploy keeps the request alive past the
+  // response we are about to send. Skipped for out-of-scope/tester-selfie
+  // reads (radar comparison doesn't apply) and for the cached short-circuit
+  // (the reconcile would have been fired on the first classify already).
+  if (
+    classification?.id &&
+    classification.phenomenon &&
+    !SKIP_RECONCILE_PHENOMENA.has(classification.phenomenon)
+  ) {
+    edgeWaitUntil(autoFireReconcile(classification.id, inviteToken));
+  }
+
   return jsonResponse({ classification, session_id: session.id });
+}
+
+async function autoFireReconcile(classification_id: string, inviteToken: string): Promise<void> {
+  try {
+    const { error } = await supabase.functions.invoke("reconcile", {
+      body: { classification_id },
+      headers: { [INVITE_HEADER]: inviteToken },
+    });
+    if (error) {
+      console.warn(
+        `[classify→reconcile] auto-fire returned error for ${classification_id}: ${error.message ?? error}`,
+      );
+    }
+  } catch (e) {
+    console.warn(
+      `[classify→reconcile] auto-fire threw for ${classification_id}:`,
+      (e as Error)?.message ?? e,
+    );
+  }
 }
 
 // deno-lint-ignore no-explicit-any

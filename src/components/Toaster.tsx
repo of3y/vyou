@@ -7,6 +7,7 @@ export default function Toaster() {
       position="top-center"
       gap={8}
       visibleToasts={4}
+      closeButton
       offset="calc(0.75rem + env(safe-area-inset-top))"
       mobileOffset="calc(0.75rem + env(safe-area-inset-top))"
       toastOptions={{

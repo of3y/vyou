@@ -77,6 +77,31 @@ async function handle(req: Request): Promise<Response> {
     return jsonResponse({ error: "heading_degrees out of range" }, 400);
   }
 
+  // Hardened-plan v2 §2 — per-reporter submit rate limit. With Fix B the
+  // classify→reconcile auto-fire amplifies submission cost; without a cap a
+  // single tester running a script could burn the cohort's Anthropic budget
+  // in an hour. 30/hr is comfortable headroom for any genuine human use.
+  const SUBMIT_LIMIT = 30;
+  const WINDOW_MS = 60 * 60 * 1000;
+  const since = new Date(Date.now() - WINDOW_MS).toISOString();
+  const { count: recentCount, error: rateErr } = await supabase
+    .from("reports")
+    .select("id", { count: "exact", head: true })
+    .eq("reporter_id", body.reporter_id!)
+    .gte("submitted_at", since);
+  if (rateErr) {
+    console.warn(`[submit-report] rate-limit count failed: ${rateErr.message}`);
+    // Fail open rather than block real users on a transient DB error; the
+    // invite cap remains as the outer cost guard.
+  } else if ((recentCount ?? 0) >= SUBMIT_LIMIT) {
+    return jsonResponse(
+      {
+        error: `You've submitted ${recentCount} sky photos in the last hour — give it a breather and try again soon.`,
+      },
+      429,
+    );
+  }
+
   const status = body.status && ["pending", "accepted", "rejected", "review"].includes(body.status)
     ? body.status
     : "accepted";

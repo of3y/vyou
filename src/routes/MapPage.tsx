@@ -9,13 +9,7 @@ import AskQuestionFab from "../components/AskQuestionFab";
 import type { LayerTime } from "../lib/layers/dwdRadar";
 import { listReports } from "../lib/api";
 import { getReporterId } from "../lib/reporter";
-
-const DEFAULT_VISIBILITY: LayerVisibility = {
-  cones: true,
-  radar: false,
-  lightning: false,
-  ir: false,
-};
+import { loadPrefs, savePrefs } from "../lib/mapPrefs";
 
 const WINDOW_MS: Record<WindowKey, number> = {
   "1h": 60 * 60 * 1000,
@@ -25,10 +19,18 @@ const WINDOW_MS: Record<WindowKey, number> = {
 };
 
 export default function MapPage() {
+  // Load persisted prefs synchronously so the first render already shows the
+  // user's last window + layer choices, not the defaults.
+  const initialPrefs = useRef(loadPrefs()).current;
   const [currentTime, setCurrentTime] = useState<LayerTime>("live");
-  const [windowKey, setWindowKey] = useState<WindowKey>("6h");
+  const [windowKey, setWindowKey] = useState<WindowKey>(initialPrefs.windowKey);
   const [timeMode, setTimeMode] = useState(false);
-  const [visibility, setVisibility] = useState<LayerVisibility>(DEFAULT_VISIBILITY);
+  const [visibility, setVisibility] = useState<LayerVisibility>(initialPrefs.visibility);
+
+  useEffect(() => {
+    savePrefs({ windowKey, visibility });
+  }, [windowKey, visibility]);
+
   const [questionsAvailable, setQuestionsAvailable] = useState(0);
   const [askTargetReportId, setAskTargetReportId] = useState<string | null>(null);
   const [activeConeId, setActiveConeId] = useState<string | null>(null);
