@@ -52,7 +52,7 @@ const CCSN_PICKS = [
 ];
 
 // Wikimedia User-Agent policy: https://meta.wikimedia.org/wiki/User-Agent_policy
-const UA = "vyou-eval-ingest/0.1 (https://github.com/of3y/vyou; redacted@example.com)";
+const UA = "vyou-eval-ingest/0.1 (https://github.com/of3y/vyou)";
 
 async function politeFetch(url, { attempts = 4, baseDelay = 800 } = {}) {
   let lastErr;
