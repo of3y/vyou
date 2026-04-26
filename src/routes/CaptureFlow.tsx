@@ -302,7 +302,7 @@ function PermissionsStep({ onGrant }: { onGrant: () => void }) {
     <div className="flex h-full flex-col items-center justify-center gap-6 px-6 text-center">
       <h1 className="text-2xl font-semibold">Grant permissions</h1>
       <p className="max-w-md text-sm text-white/60">
-        VYou needs camera, location, and device orientation to turn your sky photo into a directional cone on the shared map.
+        VYU needs camera, location, and device orientation to turn your sky photo into a directional cone on the shared map.
         On iOS, Safari will prompt for each in turn.
       </p>
       <p className="max-w-md text-xs text-white/40">

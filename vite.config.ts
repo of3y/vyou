@@ -10,8 +10,8 @@ export default defineConfig({
       includeAssets: ["icons/vyou-mark.svg", "icons/apple-touch-icon.png"],
       manifestFilename: "manifest.webmanifest",
       manifest: {
-        name: "VYou — see the weather through someone else's view",
-        short_name: "VYou",
+        name: "VYU — what's in your view",
+        short_name: "VYU",
         description: "Take a sky photo, see it become a directional cone on a shared, AI-verified weather map.",
         start_url: "/",
         scope: "/",

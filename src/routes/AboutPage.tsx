@@ -9,7 +9,7 @@ export default function AboutPage() {
         paddingBottom: "calc(2rem + env(safe-area-inset-bottom))",
       }}
     >
-      <h1 className="text-3xl font-semibold">VYou</h1>
+      <h1 className="text-3xl font-semibold">VYU</h1>
       <p className="text-white/70">
         A community-fed situational weather map. A sky photo becomes a directional, AI-verified weather report on a shared map.
       </p>

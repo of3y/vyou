@@ -16,7 +16,7 @@ export const HelloVYou = () => {
       }}
     >
       <div style={{ textAlign: "center", opacity, transform: `translateY(${lift}px)` }}>
-        <div style={{ fontSize: 200, fontWeight: 800, letterSpacing: -6 }}>VYou</div>
+        <div style={{ fontSize: 200, fontWeight: 800, letterSpacing: -6 }}>VYU</div>
         <div style={{ fontSize: 42, opacity: 0.75, marginTop: 12 }}>
           See the weather through someone else's view.
         </div>

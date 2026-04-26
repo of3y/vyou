@@ -49,11 +49,11 @@ export default function InviteGate({ children }: { children: React.ReactNode }) 
   return (
     <div className="flex min-h-dvh flex-col items-center justify-center gap-6 bg-black px-6 text-center text-white">
       <div className="space-y-2">
-        <p className="text-xs uppercase tracking-[0.2em] text-emerald-300/70">VYou</p>
+        <p className="text-xs uppercase tracking-[0.2em] text-emerald-300/70">VYU</p>
         <h1 className="text-2xl font-semibold">Invite required</h1>
       </div>
       <p className="max-w-sm text-sm text-white/60">
-        VYou is in private beta with a small test cohort this week. Reach the app via your invite link
+        VYU is in private beta with a small test cohort this week. Reach the app via your invite link
         — or paste it below if the deep link didn't carry over to the installed PWA.
       </p>
       <button

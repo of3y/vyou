@@ -60,7 +60,7 @@ export default function InstallHint() {
           <span className="mt-0.5 text-xl" aria-hidden>📲</span>
           <div className="flex-1 space-y-1">
             <p className="text-base font-semibold leading-tight">
-              Install VYou for the best experience
+              Install VYU for the best experience
             </p>
             <p className="text-xs leading-snug text-white/80">
               {platform === "ios" ? (
@@ -93,7 +93,7 @@ export default function InstallHint() {
             onClick={installAndroid}
             className="mt-3 w-full rounded-full bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-black active:scale-95"
           >
-            Install VYou
+            Install VYU
           </button>
         )}
       </div>

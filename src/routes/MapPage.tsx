@@ -116,10 +116,10 @@ export default function MapPage() {
         <Link
           to="/about"
           className="inline-flex items-center gap-1.5 rounded-full bg-white/[0.07] px-2.5 py-0.5 text-[12px] font-semibold tracking-[0.01em] text-white"
-          aria-label="About VYou"
+          aria-label="About VYU"
         >
           <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)]" />
-          VYou
+          VYU
         </Link>
         <StatusPill status={conn.status} lastOkAt={conn.lastOkAt} />
       </div>
