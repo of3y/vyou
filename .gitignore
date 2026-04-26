@@ -27,3 +27,13 @@ docs/.obsidian/workspace-mobile.json
 # Claude Code scheduled-task lock (local runtime state)
 .claude/scheduled_tasks.lock
 .vercel
+
+# Demo media + Remotion build outputs (large, regenerable)
+demo/assets/
+demo/out/
+demo/renders/
+
+# Remotion player build artifacts
+remotion-player/node_modules/
+remotion-player/dist/
+remotion-player/*.tsbuildinfo
