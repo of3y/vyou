@@ -442,14 +442,15 @@ function CameraStep({
   const compassT = compassTier(compassAccuracyDeg);
 
   // Target pose: phone held upright in portrait (beta ≈ 90°, gamma ≈ 0°).
-  // Tolerance is per-axis so the globe can hint at *which* axis is off, not
-  // just that the phone is tilted. If the orientation sensor never fired
-  // (or permission was denied) we don't gate capture — heading-step manual
-  // entry still works.
-  const TILT_TOLERANCE = 25;
+  // Pitch tolerance is wider than roll because shooting the sky means
+  // tipping the phone back — 25° was rejecting the natural pose. Roll
+  // (left/right tilt) stays tight; that one is genuinely a held-wrong
+  // signal. If the orientation sensor never fired we don't gate capture.
+  const PITCH_TOLERANCE = 45;
+  const ROLL_TOLERANCE = 25;
   const pitchOff = tilt ? tilt.beta - 90 : 0;
   const rollOff = tilt ? tilt.gamma : 0;
-  const tiltOK = !tilt || (Math.abs(pitchOff) < TILT_TOLERANCE && Math.abs(rollOff) < TILT_TOLERANCE);
+  const tiltOK = !tilt || (Math.abs(pitchOff) < PITCH_TOLERANCE && Math.abs(rollOff) < ROLL_TOLERANCE);
   const showRedEdge = !!tilt && !tiltOK;
   const canShoot = ready && tiltOK && !isLandscape;
 
@@ -486,7 +487,7 @@ function CameraStep({
           className="pointer-events-none absolute right-3"
           style={{ top: "calc(3.5rem + env(safe-area-inset-top))" }}
         >
-          <TiltGlobe pitchOff={pitchOff} rollOff={rollOff} tolerance={TILT_TOLERANCE} active={!!tilt} />
+          <TiltGlobe pitchOff={pitchOff} rollOff={rollOff} pitchTolerance={PITCH_TOLERANCE} rollTolerance={ROLL_TOLERANCE} active={!!tilt} />
         </div>
         {isLandscape && !landscapeDismissed && (
           <div
@@ -546,30 +547,34 @@ function CameraStep({
 function TiltGlobe({
   pitchOff,
   rollOff,
-  tolerance,
+  pitchTolerance,
+  rollTolerance,
   active,
 }: {
   pitchOff: number;
   rollOff: number;
-  tolerance: number;
+  pitchTolerance: number;
+  rollTolerance: number;
   active: boolean;
 }) {
   const SIZE = 64;
   const C = SIZE / 2;
   const R = C - 8;
 
-  const ok = active && Math.abs(pitchOff) < tolerance && Math.abs(rollOff) < tolerance;
-  const upBad = active && pitchOff < -tolerance;
-  const downBad = active && pitchOff > tolerance;
-  const leftBad = active && rollOff < -tolerance;
-  const rightBad = active && rollOff > tolerance;
+  const ok = active && Math.abs(pitchOff) < pitchTolerance && Math.abs(rollOff) < rollTolerance;
+  const upBad = active && pitchOff < -pitchTolerance;
+  const downBad = active && pitchOff > pitchTolerance;
+  const leftBad = active && rollOff < -rollTolerance;
+  const rightBad = active && rollOff > rollTolerance;
 
   // Wireframe rotates with the device pose so the sphere reads as a real
-  // gyroscope: pitch tips the equator, roll spins the polar axis.
-  const VIS_CLAMP = tolerance * 2.2;
-  const cl = (v: number) => Math.max(-VIS_CLAMP, Math.min(VIS_CLAMP, v));
-  const tiltX = cl(pitchOff);
-  const tiltZ = cl(rollOff);
+  // gyroscope: pitch tips the equator, roll spins the polar axis. Clamp to
+  // the per-axis tolerance so the visual bias matches the gate.
+  const VIS_CLAMP_X = pitchTolerance * 2.2;
+  const VIS_CLAMP_Z = rollTolerance * 2.2;
+  const cl = (v: number, c: number) => Math.max(-c, Math.min(c, v));
+  const tiltX = cl(pitchOff, VIS_CLAMP_X);
+  const tiltZ = cl(rollOff, VIS_CLAMP_Z);
 
   const stroke = ok
     ? "rgba(110, 231, 183, 0.95)"

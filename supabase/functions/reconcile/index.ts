@@ -322,14 +322,27 @@ Reconcile per the output contract.`,
 
   const parsed = extractJson(transcript, { requireKeys: ["verdict"] });
   if (!parsed) {
-    // Log the tail of the transcript so prod incidents are diagnosable from
-    // the function logs alone — the 502 body carries the full transcript for
-    // the UI but logs are cheaper to grep at scale.
+    // Persist an inconclusive row instead of returning 502. The 502 path
+    // dropped classify→reconcile chains on the floor — verified_reports
+    // never landed, the trigger never granted a question, the bell stayed
+    // empty. Land a row with rationale naming the failure mode so the UI
+    // shows a clean "inconclusive" verdict and the chain continues.
     const tail = transcript.slice(-400).replace(/\s+/g, " ").trim();
     console.warn(
       `[reconcile] unparseable JSON session=${session.id} transcript_len=${transcript.length} tail=${tail}`,
     );
-    return jsonResponse({ error: "agent did not return parseable JSON", transcript }, 502);
+    const row = await insertVerifiedReport({
+      report_id: classification.report_id,
+      classification_id: classification.id,
+      radar_frame_url: radar.url,
+      verdict: "inconclusive",
+      rationale: transcript.length === 0
+        ? "Reconciliation agent returned no output. The session terminated before producing a verdict; the radar frame and classifier record were not compared."
+        : "Reconciliation agent output was not parseable as JSON. Verdict could not be extracted.",
+      confidence: "low",
+      session_stats: sessionStats,
+    });
+    return jsonResponse({ verified_report: row, unparseable: true, session_id: session.id });
   }
 
   const verdict = ["match", "mismatch", "inconclusive"].includes(parsed.verdict as string)

@@ -3,6 +3,8 @@ import { getReport } from "./api";
 import { getReporterId } from "./reporter";
 import { notify } from "./notify";
 import { prettyPhenomenon } from "./format";
+import { supabase } from "./supabase";
+import { inviteHeaders } from "./invite";
 
 // Background poll that survives route changes — kicked off on submit so the
 // "Classified" toast still fires even if the user has navigated away from the
@@ -10,7 +12,12 @@ import { prettyPhenomenon } from "./format";
 const TIMEOUT_MS = 90_000;
 const INTERVAL_MS = 3_000;
 
+// Phenomena that bypass radar reconciliation, mirrors the server-side gate
+// in supabase/functions/classify/index.ts.
+const SKIP_RECONCILE_PHENOMENA = new Set(["out_of_scope", "tester_selfie"]);
+
 const inFlight = new Set<string>();
+const reconcileFired = new Set<string>();
 
 export function trackClassification(reportId: string): void {
   if (inFlight.has(reportId)) return;
@@ -27,12 +34,30 @@ export function trackClassification(reportId: string): void {
       const { data } = await getReport(reportId, getReporterId());
       if (data?.classification) {
         inFlight.delete(reportId);
-        // Hardened-plan v2 §2 Fix C — distinct rejection toast when the
-        // classifier flips `safe: false`. The submission is dropped from the
-        // shared map server-side; the toast tells the reporter why and offers
-        // a Retake CTA so the loop closes cleanly. Out-of-scope and
-        // tester-selfie reads are still safe=true and surface as a normal
-        // "Classified" toast.
+        // Client-side reconcile fire. The server-side classify→reconcile
+        // auto-fire was unreliable on Supabase Edge Functions (waitUntil
+        // cut short, synchronous await hit per-call fetch timeout). The
+        // client is online and authenticated, so firing reconcile here is
+        // strictly more reliable. Reconcile is idempotent on
+        // (classification_id) so a redundant server-side success does not
+        // double-charge or double-write.
+        const cls = data.classification;
+        if (
+          cls.safe !== false &&
+          cls.id &&
+          cls.phenomenon &&
+          !SKIP_RECONCILE_PHENOMENA.has(cls.phenomenon) &&
+          !reconcileFired.has(cls.id) &&
+          !data.verified
+        ) {
+          reconcileFired.add(cls.id);
+          supabase.functions
+            .invoke("reconcile", {
+              body: { classification_id: cls.id },
+              headers: inviteHeaders(),
+            })
+            .catch((e) => console.warn("[VYou] reconcile invoke failed", e));
+        }
         if (data.classification.safe === false) {
           notify.warning(
             "Couldn't add this photo — try a clearer view of the sky.",

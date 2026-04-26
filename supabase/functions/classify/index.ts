@@ -219,21 +219,13 @@ async function handle(req: Request): Promise<Response> {
     }
   }
 
-  // Hardened-plan v2 §1 Correction 1 — auto-fire reconcile so the user is
-  // never asked to tap *Verify against radar*. The unawaited invoke is wrapped
-  // in EdgeRuntime.waitUntil so Deno Deploy keeps the request alive past the
-  // response we are about to send. Skipped for out-of-scope/tester-selfie
-  // reads (radar comparison doesn't apply), unsafe submissions (Fix C — no
-  // paid session on rejected content), and for the cached short-circuit (the
-  // reconcile would have been fired on the first classify already).
-  if (
-    safe &&
-    classification?.id &&
-    classification.phenomenon &&
-    !SKIP_RECONCILE_PHENOMENA.has(classification.phenomenon)
-  ) {
-    edgeWaitUntil(autoFireReconcile(classification.id, inviteToken));
-  }
+  // Reconcile is fired from the client (src/lib/pendingClassification.tsx)
+  // once the classification row is observed. Both server-side variants we
+  // tried were unreliable on Supabase Edge Functions: EdgeRuntime.waitUntil
+  // dropped the inner invoke before completion, and a synchronous `await`
+  // hit the inner-fetch timeout while reconcile's session was still running.
+  // Reconcile is idempotent on (classification_id) so the client-side fire
+  // is safe to run unconditionally.
 
   return jsonResponse({ classification, session_id: session.id });
 }
