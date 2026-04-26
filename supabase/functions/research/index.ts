@@ -356,6 +356,36 @@ async function handle(req: Request): Promise<Response> {
     if (incErr) console.warn("[research] questions_used increment failed:", incErr.message);
   }
 
+  // Write-back to the per-cell location memstore so the next brief in
+  // the same geohash6 cell can cite this contribution. Best-effort: a
+  // failure here is logged and does not affect the response. Per README
+  // privacy posture, only the location store is written from research;
+  // the user store stays read-only via this path. The content shape
+  // mirrors scripts/seed-demo-memstore.mjs so seeded demo memories and
+  // organic memories live under the same /contributors/ namespace.
+  if (locMemstore) {
+    const stamp = Date.now();
+    const path = `/contributors/${stamp}-research.md`;
+    const phenomenon = (classification as { phenomenon?: string } | null)?.phenomenon ?? "unclassified";
+    const verdict = (verified as { verdict?: string } | null)?.verdict ?? "unverified";
+    const memoryContent = `# ${new Date().toISOString()}
+question: ${question}
+phenomenon: ${phenomenon}
+reconcile_verdict: ${verdict}
+brief_excerpt: ${parsed.content.slice(0, 400).replace(/\s+/g, " ").trim()}
+`;
+    const memoryWrite = anthropic.beta.memoryStores.memories
+      .create(locMemstore.store_id, { path, content: memoryContent })
+      .then(
+        (m) => console.log(`[research] memory write-back ${locMemstore!.store_name}${path} (${m.content_size_bytes}B)`),
+        (e) => console.warn(`[research] memory write-back failed ${locMemstore!.store_name}${path}:`, e?.message ?? e),
+      );
+    // deno-lint-ignore no-explicit-any
+    const er = (globalThis as any).EdgeRuntime;
+    if (er?.waitUntil) er.waitUntil(memoryWrite);
+    // No await: response should not wait on memory write.
+  }
+
   return jsonResponse({ brief: briefRow, session_id: session.id });
 }
 
