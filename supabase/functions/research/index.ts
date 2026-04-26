@@ -4,6 +4,7 @@ import { buildSessionStats } from "../_shared/cost.ts";
 import { requireInvite } from "../_shared/invite.ts";
 import { fetchOpenMeteo, openMeteoSummary } from "../_shared/feeds.ts";
 import { extractJson } from "../_shared/extractJson.ts";
+import { ensureLocationMemstore, ensureUserMemstore, type EnsureMemstoreResult } from "../_shared/memstore.ts";
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
@@ -166,12 +167,55 @@ async function handle(req: Request): Promise<Response> {
   const queryLon = typeof user_lon === "number" ? user_lon : report.lon;
   const openMeteo = await fetchOpenMeteo({ lat: queryLat, lon: queryLon, forecast_hours: 2 });
 
+  // Memory Box: per-cell + per-user stores attached to the session. The
+  // agent reads them via its read tool at /mnt/memory/<store_name>/. Privacy
+  // posture (Fix D in the hardened plan): the per-user store carries only
+  // the anonymous reporter_id and aggregated signal — no raw photos,
+  // captions, or IPs. Write-back happens in the Edge Function via
+  // memories.create after we parse the agent's output, not from session
+  // tools. Failures here are logged and the session proceeds without the
+  // store rather than blocking.
+  let locMemstore: EnsureMemstoreResult | null = null;
+  let userMemstore: EnsureMemstoreResult | null = null;
+  try {
+    [locMemstore, userMemstore] = await Promise.all([
+      ensureLocationMemstore(supabase, anthropic, { lat: report.lat, lon: report.lon }),
+      ensureUserMemstore(supabase, anthropic, { reporter_id: reporter_id! }),
+    ]);
+  } catch (e) {
+    console.warn(`[research] memstore ensure failed (continuing without): ${(e as Error).message}`);
+  }
+
+  const sessionResources: Array<{
+    type: "memory_store";
+    memory_store_id: string;
+    access: "read_only";
+    instructions: string;
+  }> = [];
+  if (locMemstore) {
+    sessionResources.push({
+      type: "memory_store",
+      memory_store_id: locMemstore.store_id,
+      access: "read_only",
+      instructions: `Per-location store mounted at ${locMemstore.mount_path}/. Prior briefs, accepted reports, and rolling baseline for this geohash6 cell live here. When you cite a prior contributor's observation, surface it as "a contributor here noted X" rather than absorbing it into your voice.`,
+    });
+  }
+  if (userMemstore) {
+    sessionResources.push({
+      type: "memory_store",
+      memory_store_id: userMemstore.store_id,
+      access: "read_only",
+      instructions: `Per-user store mounted at ${userMemstore.mount_path}/. Declared goal-context, accuracy track record, and prior briefings for THIS reporter_id. Contains only anonymized signal — no raw photos, captions, or IP addresses; do not surface PII back into the brief.`,
+    });
+  }
+
   const session = await anthropic.beta.sessions.create({
     agent: DEEP_RESEARCHER_AGENT_ID!,
     environment_id: DEEP_RESEARCHER_ENVIRONMENT_ID!,
     title: `research ${report_id.slice(0, 8)}`,
+    ...(sessionResources.length ? { resources: sessionResources } : {}),
   });
-  console.log(`[research] session ${session.id} for report ${report_id}`);
+  console.log(`[research] session ${session.id} for report ${report_id} memstores=[${[locMemstore?.store_name, userMemstore?.store_name].filter(Boolean).join(",") || "none"}]`);
 
   const stream = await anthropic.beta.sessions.events.stream(session.id);
   const promptText = buildPrompt({

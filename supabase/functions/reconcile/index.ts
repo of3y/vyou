@@ -5,6 +5,7 @@ import { radolanFrameForReport } from "../_shared/radolan.ts";
 import { requireInvite } from "../_shared/invite.ts";
 import { extractJson } from "../_shared/extractJson.ts";
 import { fetchMtgFrame, fetchOpenMeteo, openMeteoSummary } from "../_shared/feeds.ts";
+import { ensureLocationMemstore, type EnsureMemstoreResult } from "../_shared/memstore.ts";
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
@@ -136,12 +137,31 @@ async function handle(req: Request): Promise<Response> {
     }),
   ]);
 
+  // Per-cell Memory Box. Provisioned lazily on first cone in the cell;
+  // attached read-only to the session so the agent can consult prior radar
+  // baseline + accepted reports via its read tool. Memory write-back is the
+  // Edge Function's job (memories.create) after we parse the agent's output.
+  let locMemstore: EnsureMemstoreResult | null = null;
+  try {
+    locMemstore = await ensureLocationMemstore(supabase, anthropic, { lat: report.lat, lon: report.lon });
+  } catch (e) {
+    console.warn(`[reconcile] memstore ensure failed (continuing without): ${(e as Error).message}`);
+  }
+
+  const sessionResources = locMemstore ? [{
+    type: "memory_store" as const,
+    memory_store_id: locMemstore.store_id,
+    access: "read_only" as const,
+    instructions: `Per-cell rolling baseline mounted at ${locMemstore.mount_path}/. Read prior radar baseline, accepted reports, and prior reconciliations from this directory before writing your verdict.`,
+  }] : undefined;
+
   const session = await anthropic.beta.sessions.create({
     agent: RECONCILIATION_AGENT_ID!,
     environment_id: RECONCILIATION_ENVIRONMENT_ID!,
     title: `reconcile ${classification_id.slice(0, 8)}`,
+    ...(sessionResources ? { resources: sessionResources } : {}),
   });
-  console.log(`[reconcile] session ${session.id} for classification ${classification_id}`);
+  console.log(`[reconcile] session ${session.id} for classification ${classification_id} memstore=${locMemstore?.store_name ?? "none"}`);
 
   const stream = await anthropic.beta.sessions.events.stream(session.id);
   // deno-lint-ignore no-explicit-any
