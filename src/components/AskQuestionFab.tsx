@@ -6,7 +6,12 @@ import { getReport } from "../lib/api";
 import type { Brief } from "../lib/types";
 
 const POLL_INTERVAL_MS = 2500;
-const RESEARCH_POLL_TIMEOUT_MS = 90_000;
+// DR with the image attached takes ~50–80s typically; 90s was clipping
+// the slow tail. 180s gives genuinely-stuck calls room before we surface
+// the timeout copy. The user-perceived wait is bounded by their patience,
+// not this constant — they can close the drawer and reopen later, and
+// the brief is loaded fresh on next open.
+const RESEARCH_POLL_TIMEOUT_MS = 180_000;
 
 type Props = {
   reportId: string | null;
@@ -178,6 +183,20 @@ export default function AskQuestionFab({
       }
       if (Date.now() - startedAt > RESEARCH_POLL_TIMEOUT_MS) {
         if (cancelRef.current) return;
+        // One final lookup before surfacing the timeout copy. Briefs are
+        // sometimes written between polls; without this check the user sees
+        // the timeout error even though the answer is already in the DB.
+        try {
+          const { data: final } = await getReport(rid, reporterId);
+          if (!cancelRef.current && final?.brief) {
+            setBrief(final.brief);
+            setPending(false);
+            onAnswered?.();
+            return;
+          }
+        } catch {
+          // fall through to timeout copy
+        }
         setError("DR is taking a while — your question is saved and we'll show the answer when ready.");
         setPending(false);
         return;

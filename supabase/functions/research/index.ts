@@ -229,11 +229,17 @@ async function handle(req: Request): Promise<Response> {
     queryLon,
   });
 
+  // DR sees the actual photo, not just the classifier's features list.
+  // Without this the brief inherits image content second-hand through the
+  // classifier's tags, which collapses any visual nuance the classifier
+  // didn't pre-tag. With it, DR can ground its language about light,
+  // framing, and what's actually visible in the cone.
   await anthropic.beta.sessions.events.send(session.id, {
     events: [
       {
         type: "user.message",
         content: [
+          { type: "image", source: { type: "url", url: report.photo_url } },
           { type: "text", text: promptText },
         ],
       },
@@ -389,6 +395,8 @@ function buildPrompt(args: {
   return `User question: "${args.question}"
 
 Question lat/lon: ${args.queryLat.toFixed(4)}, ${args.queryLon.toFixed(4)}
+
+The image attached above this prompt IS the subject report's photo — taken at the location and heading below, looking out from that point. Read it directly when you ground claims about what is in the sky; do not rely solely on the Classifier record's feature tags.
 
 Subject report (the verified report this question is anchored to):
 - id: ${r.id}
