@@ -13,6 +13,13 @@ const POLL_INTERVAL_MS = 2500;
 const CLASSIFY_POLL_TIMEOUT_MS = 90_000;
 const RECONCILE_POLL_TIMEOUT_MS = 180_000;
 const RESEARCH_POLL_TIMEOUT_MS = 60_000;
+// After classify→reconcile auto-fire (Hardened-plan v2 Fix B), the verified
+// row should land within ~30s for typical sessions. 60s is the recovery
+// window: long enough to absorb a slow reconcile, short enough to surface a
+// "try again" CTA before the user gives up.
+const AUTO_VERIFY_RECOVERY_MS = 60_000;
+
+const SKIP_RECONCILE_PHENOMENA = new Set(["out_of_scope", "tester_selfie"]);
 
 // Module-scoped: survives component remount within the same browser session,
 // keyed by classification id. Server-side idempotency is the durable guard.
@@ -47,9 +54,11 @@ const DEV_DEBUG =
   import.meta.env.DEV ||
   (typeof window !== "undefined" && new URLSearchParams(window.location.search).has("debug"));
 
-// `?debug=1` (or any presence of the `debug` flag) flips the Reconciliation
-// card from hidden to visible. The debug flag is also what shows the cost
-// footer; keeping the same flag for both keeps the URL hygiene tidy.
+// `?debug=1` flips the Reconciliation debug-card from hidden to visible. The
+// owner-side Verify CTA is no longer behind this flag — Hardened-plan v2 §2
+// drops the gate so any owner of a classified-but-not-verified report can
+// trigger reconcile manually. After Fix B's auto-fire, only legacy rows
+// surface the CTA in practice.
 const SHOW_DEBUG =
   typeof window !== "undefined" && new URLSearchParams(window.location.search).has("debug");
 
@@ -177,6 +186,48 @@ export default function ReportDetail() {
   }, [classification, report?.id]);
 
   const [verifyAttempt, setVerifyAttempt] = useState(0);
+  const [autoVerifyTimedOut, setAutoVerifyTimedOut] = useState(false);
+
+  // Hardened-plan v2 §2 — passive verify poll for the auto-fire path. After
+  // classify lands, classify→reconcile auto-fires server-side; the user is
+  // not asked to tap Verify. We poll for the verified row in the background
+  // and show a passive *Verifying…* chip (no button). At 60s with no row,
+  // flip `autoVerifyTimedOut` so QuestionCard surfaces a *Try again* CTA
+  // that calls the manual onVerify path. Skipped for out-of-scope/selfie
+  // reads (the local-fallback recheck above already short-circuits those).
+  useEffect(() => {
+    if (!classification) return;
+    if (verified) return;
+    if (verifyRequested) return; // manual path owns the polling
+    if (
+      classification.phenomenon &&
+      SKIP_RECONCILE_PHENOMENA.has(classification.phenomenon)
+    ) return;
+
+    let cancelled = false;
+    const startedAt = Date.now();
+    const cid = classification.id;
+
+    async function tick() {
+      if (cancelled) return;
+      const { data } = await getReport(report?.id ?? cid, getReporterId());
+      if (cancelled) return;
+      if (data?.verified && data.verified.classification_id === cid) {
+        setVerifiedStable(setVerified, data.verified);
+        return;
+      }
+      if (Date.now() - startedAt > AUTO_VERIFY_RECOVERY_MS) {
+        setAutoVerifyTimedOut(true);
+        return;
+      }
+      setTimeout(tick, POLL_INTERVAL_MS);
+    }
+    tick();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [classification, verified, verifyRequested, report?.id]);
 
   // Polling loop runs only after the visitor explicitly taps Verify. It
   // invokes the edge function and then polls verified_reports until the
@@ -261,6 +312,7 @@ export default function ReportDetail() {
 
   function startVerification() {
     setVerifyError(null);
+    setAutoVerifyTimedOut(false);
     setVerifyRequested(true);
     setVerifyAttempt((n) => n + 1);
   }
@@ -553,6 +605,7 @@ export default function ReportDetail() {
             verified={verified}
             verifyError={verifyError}
             onVerify={startVerification}
+            autoVerifyTimedOut={autoVerifyTimedOut}
           />
 
           {SHOW_DEBUG && (
@@ -856,6 +909,7 @@ function QuestionCard({
   verified,
   verifyError,
   onVerify,
+  autoVerifyTimedOut,
 }: {
   questionsAvailable: number;
   ungated: boolean;
@@ -870,6 +924,7 @@ function QuestionCard({
   verified: VerifiedReport | null;
   verifyError: string | null;
   onVerify: () => void;
+  autoVerifyTimedOut: boolean;
 }) {
   const canAsk = ungated || questionsAvailable >= 1;
 
@@ -906,7 +961,8 @@ function QuestionCard({
   }
 
   if (!canAsk) {
-    const verifying = verifyRequested && !verified;
+    const verifying = !verified && hasClassification && !autoVerifyTimedOut;
+    const recoveryNeeded = !verified && hasClassification && autoVerifyTimedOut;
     const verdictMatched = verified?.verdict === "match";
     const verdictNotMatched = verified && verified.verdict !== "match";
     const earningLedger = verdictMatched && questionsAvailable < 1;
@@ -929,10 +985,26 @@ function QuestionCard({
           )}
         </div>
 
-        {!verifyRequested && !verified && hasClassification && (
+        {!hasClassification && (
+          <p className="text-[13px] text-white/60">Waiting for the photo classifier to land before reconciliation runs.</p>
+        )}
+
+        {verifying && (
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2.5 text-[14px] text-white/75">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+              <span>Reconciling photo against radar + Open-Meteo + MTG…</span>
+            </div>
+            <p className="text-[11px] text-white/40">
+              Two CMAs run when you submit — the third runs when you ask.
+            </p>
+          </div>
+        )}
+
+        {recoveryNeeded && !verifyRequested && (
           <>
-            <p className="text-[14px] leading-relaxed text-white/80">
-              Verify this sky photo against DWD radar + Open-Meteo + MTG satellite to earn one Deep Researcher question. Ask anything weather-grounded — best park for lunch, whether to head up the mountain, will the sunset hold.
+            <p className="text-[13.5px] leading-relaxed text-white/75">
+              Reconciliation is taking longer than usual — the auto-fire may have dropped. Tap below to retry against DWD radar + Open-Meteo + MTG.
             </p>
             <button
               type="button"
@@ -944,17 +1016,6 @@ function QuestionCard({
             </button>
             <p className="text-center text-[11px] text-white/35">~10–60s · uses Reconciliation CMA</p>
           </>
-        )}
-
-        {!hasClassification && !verifyRequested && (
-          <p className="text-[13px] text-white/60">Waiting for the photo classifier to land before you can verify.</p>
-        )}
-
-        {verifying && (
-          <div className="flex items-center gap-2.5 text-[14px] text-white/70">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
-            <span>Reconciling photo against radar + Open-Meteo + MTG…</span>
-          </div>
         )}
 
         {earningLedger && (
