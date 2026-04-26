@@ -12,16 +12,51 @@ type Props = {
   reportId: string | null;
   questionsAvailable: number;
   onAnswered?: () => void;
+  // Hardened-plan v2 §2 Fix E — millisecond timestamp set the instant the
+  // user transitions from N to N+1 questions earned. Drives the bell's
+  // loud-pulse state (4s decay) and the *celebrate-the-trade* drawer copy.
+  newEarnAt?: number | null;
+  onNewEarnAcknowledged?: () => void;
+  lastVerifiedAt?: string | null;
 };
 
-export default function AskQuestionFab({ reportId, questionsAvailable, onAnswered }: Props) {
+const PULSE_DURATION_MS = 4_000;
+
+export default function AskQuestionFab({
+  reportId,
+  questionsAvailable,
+  onAnswered,
+  newEarnAt,
+  onNewEarnAcknowledged,
+  lastVerifiedAt,
+}: Props) {
   const canAsk = Boolean(reportId) && questionsAvailable >= 1;
   const [open, setOpen] = useState(false);
   const [askText, setAskText] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [brief, setBrief] = useState<Brief | null>(null);
+  // Pulse decays after 4s independently of whether the user opens the
+  // drawer; sustained state is the soft `balance > 0` glow on the badge.
+  const [pulseActive, setPulseActive] = useState(false);
+  // True when the next drawer-open should land on the celebrate-the-trade
+  // copy. Set by the new-earn signal; cleared by either explicit ack or by
+  // the user advancing to compose.
+  const [celebratePending, setCelebratePending] = useState(false);
+  // First view shown when the drawer opens — celebrate the trade if a
+  // new earn is pending, otherwise compose directly.
+  const [showCelebrate, setShowCelebrate] = useState(false);
   const cancelRef = useRef(false);
+
+  // React to a new-earn signal: trigger the loud pulse for 4s and queue
+  // the celebrate view for the next drawer-open.
+  useEffect(() => {
+    if (newEarnAt == null) return;
+    setPulseActive(true);
+    setCelebratePending(true);
+    const t = setTimeout(() => setPulseActive(false), PULSE_DURATION_MS);
+    return () => clearTimeout(t);
+  }, [newEarnAt]);
 
   useEffect(() => {
     cancelRef.current = false;
@@ -39,9 +74,23 @@ export default function AskQuestionFab({ reportId, questionsAvailable, onAnswere
 
   const close = useCallback(() => {
     setOpen(false);
+    setShowCelebrate(false);
     // Defer reset so the close animation doesn't flash empty content.
     setTimeout(reset, 200);
   }, [reset]);
+
+  const openDrawer = useCallback(() => {
+    if (celebratePending && canAsk) {
+      setShowCelebrate(true);
+      setCelebratePending(false);
+      onNewEarnAcknowledged?.();
+    }
+    setOpen(true);
+  }, [celebratePending, canAsk, onNewEarnAcknowledged]);
+
+  const advanceToCompose = useCallback(() => {
+    setShowCelebrate(false);
+  }, []);
 
   const submit = useCallback(async () => {
     const q = askText.trim();
@@ -142,8 +191,12 @@ export default function AskQuestionFab({ reportId, questionsAvailable, onAnswere
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
-        aria-label="Ask a question"
+        onClick={openDrawer}
+        aria-label={
+          questionsAvailable > 0
+            ? `Ask a question (${questionsAvailable} available)`
+            : "Ask a question"
+        }
         className={`relative inline-flex items-center gap-2 rounded-full border px-5 text-[14px] font-semibold tracking-tight shadow-[0_4px_16px_-4px_rgba(0,0,0,0.55)] backdrop-blur-xl transition-colors active:scale-[0.96] ${
           canAsk
             ? "border-emerald-400/30 bg-emerald-500/15 text-emerald-100 hover:bg-emerald-500/25"
@@ -154,9 +207,20 @@ export default function AskQuestionFab({ reportId, questionsAvailable, onAnswere
         <AskIcon />
         <span>Ask</span>
         {questionsAvailable > 0 && (
-          <span className="absolute -right-1 -top-1 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-emerald-400 px-[5px] text-[10px] font-bold text-black ring-2 ring-[#0f1115]">
-            {questionsAvailable}
-          </span>
+          <>
+            {pulseActive && (
+              <span
+                aria-hidden
+                className="vyou-fab-loud-pulse pointer-events-none absolute -right-1 -top-1 h-[18px] w-[18px] rounded-full bg-emerald-400/70"
+              />
+            )}
+            <span
+              aria-live="polite"
+              className={`vyou-fab-soft-glow absolute -right-1 -top-1 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-emerald-400 px-[5px] text-[10px] font-bold text-black ring-2 ring-[#0f1115]`}
+            >
+              {questionsAvailable}
+            </span>
+          </>
         )}
       </button>
 
@@ -182,6 +246,13 @@ export default function AskQuestionFab({ reportId, questionsAvailable, onAnswere
                 hasReport={Boolean(reportId)}
                 questionsAvailable={questionsAvailable}
               />
+            ) : showCelebrate ? (
+              <CelebrateView
+                lastVerifiedAt={lastVerifiedAt ?? null}
+                questionsAvailable={questionsAvailable}
+                onAdvance={advanceToCompose}
+                onClose={close}
+              />
             ) : (
               <ComposeView
                 askText={askText}
@@ -196,6 +267,82 @@ export default function AskQuestionFab({ reportId, questionsAvailable, onAnswere
         </div>
       )}
     </>
+  );
+}
+
+function CelebrateView({
+  lastVerifiedAt,
+  questionsAvailable,
+  onAdvance,
+  onClose,
+}: {
+  lastVerifiedAt: string | null;
+  questionsAvailable: number;
+  onAdvance: () => void;
+  onClose: () => void;
+}) {
+  const relTime = lastVerifiedAt ? relativeTime(lastVerifiedAt) : "just now";
+  return (
+    <section>
+      <div className="flex items-center justify-between">
+        <p className="text-[11px] uppercase tracking-wider text-emerald-200/80">
+          You earned a question
+        </p>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-full bg-white/10 px-3 py-1 text-[11px] font-medium text-white/70 active:scale-95"
+          aria-label="Close"
+        >
+          Close
+        </button>
+      </div>
+      <p className="mt-3 text-[14px] leading-relaxed text-white/85">
+        Your VYUport from {relTime} verified — the radar agreed. Spend it on something about your sky?
+      </p>
+      <p className="mt-2 text-[11px] text-white/45">
+        {questionsAvailable} {questionsAvailable === 1 ? "question" : "questions"} ready to ask.
+      </p>
+      <button
+        type="button"
+        onClick={onAdvance}
+        className="mt-4 inline-flex items-center gap-2 rounded-full bg-white px-5 py-2.5 text-[13px] font-semibold text-black shadow-lg active:scale-95"
+      >
+        Ask a question
+        <ArrowRight />
+      </button>
+    </section>
+  );
+}
+
+function relativeTime(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) return "just now";
+  const diffSec = Math.max(0, Math.round((Date.now() - then) / 1000));
+  if (diffSec < 30) return "just now";
+  if (diffSec < 90) return "a minute ago";
+  const diffMin = Math.round(diffSec / 60);
+  if (diffMin < 60) return `${diffMin} minutes ago`;
+  const diffHr = Math.round(diffMin / 60);
+  if (diffHr < 24) return diffHr === 1 ? "an hour ago" : `${diffHr} hours ago`;
+  return "earlier";
+}
+
+function ArrowRight() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M5 12h14M13 5l7 7-7 7" />
+    </svg>
   );
 }
 

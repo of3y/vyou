@@ -34,6 +34,16 @@ export default function MapPage() {
   const [questionsAvailable, setQuestionsAvailable] = useState(0);
   const [askTargetReportId, setAskTargetReportId] = useState<string | null>(null);
   const [activeConeId, setActiveConeId] = useState<string | null>(null);
+  // Hardened-plan v2 §2 Fix E — `newEarnAt` is set the moment the FAB
+  // observes `questionsAvailable` go from N to N+1. Drives the bell's
+  // loud-pulse state and the celebrate-the-trade copy in the drawer.
+  // Cleared by the FAB once the user has opened the drawer to acknowledge
+  // the earn; the soft `balance > 0` glow takes over from there.
+  const [newEarnAt, setNewEarnAt] = useState<number | null>(null);
+  // Most recent verified-match timestamp from the list — sourced for the
+  // *VYUport from {{relative-time}} verified* copy in the bell drawer.
+  const [lastVerifiedAt, setLastVerifiedAt] = useState<string | null>(null);
+  const lastEarnedRef = useRef<number | null>(null);
   const conn = useConnStatus();
   const { recordOk, recordError } = conn;
   const refreshAskStateRef = useRef<() => void>(() => {});
@@ -52,15 +62,26 @@ export default function MapPage() {
       }
       recordOk(performance.now() - startedAt);
 
-      const available = data.profile
-        ? Math.max(0, (data.profile.questions_earned ?? 0) - (data.profile.questions_used ?? 0))
-        : 0;
+      const earned = data.profile?.questions_earned ?? 0;
+      const used = data.profile?.questions_used ?? 0;
+      const available = Math.max(0, earned - used);
       setQuestionsAvailable(available);
 
-      const ownMatch = data.reports.find(
+      // New-earn detection: questions_earned ratchets monotonically. If the
+      // latest poll shows it climbed since the last poll AND the user still
+      // has unspent balance, fire the bell.
+      const prevEarned = lastEarnedRef.current;
+      if (prevEarned !== null && earned > prevEarned && available > 0) {
+        setNewEarnAt(Date.now());
+      }
+      lastEarnedRef.current = earned;
+
+      const ownMatches = data.reports.filter(
         (r) => r.reporter_id === reporterId && r.verified?.verdict === "match",
       );
-      setAskTargetReportId(ownMatch?.id ?? null);
+      const latestMatch = ownMatches[0]; // list is ordered submitted_at desc
+      setAskTargetReportId(latestMatch?.id ?? null);
+      setLastVerifiedAt(latestMatch?.verified?.created_at ?? null);
     }
 
     refreshAskStateRef.current = loadAskState;
@@ -142,6 +163,9 @@ export default function MapPage() {
             reportId={askTargetReportId}
             questionsAvailable={questionsAvailable}
             onAnswered={handleAnswered}
+            newEarnAt={newEarnAt}
+            onNewEarnAcknowledged={() => setNewEarnAt(null)}
+            lastVerifiedAt={lastVerifiedAt}
           />
           <button
             type="button"

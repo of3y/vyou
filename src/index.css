@@ -101,6 +101,37 @@ textarea,
   }
 }
 
+/* AskQuestionFab badge — two-state. Loud pulse fires once on a new earn
+ * and decays in 4s; the soft glow is the persistent `balance > 0` state.
+ * Both flatten to color-only under prefers-reduced-motion. */
+@keyframes vyou-fab-loud-pulse {
+  0%   { transform: scale(0.6); opacity: 0.9; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+@keyframes vyou-fab-soft-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.55); }
+  50%      { box-shadow: 0 0 0 4px rgba(52, 211, 153, 0); }
+}
+.vyou-fab-loud-pulse {
+  animation: vyou-fab-loud-pulse 1100ms cubic-bezier(0.2, 0.7, 0.2, 1) infinite;
+}
+.vyou-fab-soft-glow {
+  animation: vyou-fab-soft-glow 2200ms ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vyou-fab-loud-pulse,
+  .vyou-fab-soft-glow {
+    animation: none;
+  }
+  .vyou-fab-loud-pulse {
+    /* Replace the expanding ring with a solid emerald halo so reduced-motion
+     * users still get the new-earn signal as color, not motion. */
+    opacity: 0.65;
+    transform: scale(1.4);
+  }
+}
+
 /* Discreet MapLibre attribution: tucked into the bottom-right corner,
  * tiny and translucent so it never fights the primary CTA. The "i" toggles
  * to expand to the full attribution string when tapped. */
