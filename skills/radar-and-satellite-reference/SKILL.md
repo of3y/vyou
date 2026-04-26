@@ -6,13 +6,13 @@ license: MIT — see LICENSE.txt
 
 # radar-and-satellite-reference
 
-Reference knowledge for translating raw DWD RADOLAN radar composites and EUMETSAT MTG satellite products into statements VYou's agents can reason over. The skill names the channels / products the agents use by default, the per-channel diagnostic framing, and the uncertainty bounds each instrument carries.
+Reference knowledge for translating raw DWD RADOLAN radar composites and EUMETSAT MTG satellite products into statements VYU's agents can reason over. The skill names the channels / products the agents use by default, the per-channel diagnostic framing, and the uncertainty bounds each instrument carries.
 
 Cited by: **Radar** (Messages API with cached skill prefix — deterministic HTTP + latency-sensitive, no session state), **Reconciliation** (CMA, per-location memory attached), and **Deep Researcher** (CMA, per-user + per-location memory attached). The same skill serves both surfaces because the reference content is the same regardless of how the calling agent consumes it.
 
 ## Overview
 
-VYou's verified-report loop combines a community photo with two official weather-evidence layers: DWD RADOLAN radar (the ground-truth precipitation signal) and EUMETSAT MTG satellite (the cloud-top and lightning signal). This skill is the shared vocabulary those two evidence layers carry into the Reconciliation narrative and the Deep Researcher evidence brief.
+VYU's verified-report loop combines a community photo with two official weather-evidence layers: DWD RADOLAN radar (the ground-truth precipitation signal) and EUMETSAT MTG satellite (the cloud-top and lightning signal). This skill is the shared vocabulary those two evidence layers carry into the Reconciliation narrative and the Deep Researcher evidence brief.
 
 ## Evidence vocabulary (Reconciliation + Deep Researcher prompts)
 

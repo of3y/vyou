@@ -1,18 +1,18 @@
 ---
 name: severe-weather-reporting
-description: Use this skill whenever the agent needs to identify or describe meteorological phenomena in a sky or outdoor photograph. Triggers include classifying the weather in an image, extracting diagnostic visual features, estimating hail size from a scale-referenced frame, judging consistency with radar/satellite context, or routing a weather-photo submission in the VYou pipeline. Provides the phenomenon taxonomy (14 scored labels across cloud morphology, non-severe precipitation, severe convection, and storm structures), per-phenomenon feature vocabularies, the three-level confidence rubric, hail-size anchor-object guidance, and the out-of-scope escape hatch. Do NOT use for satellite-product interpretation or radar composite reading — those live in the radar-and-satellite-reference skill.
+description: Use this skill whenever the agent needs to identify or describe meteorological phenomena in a sky or outdoor photograph. Triggers include classifying the weather in an image, extracting diagnostic visual features, estimating hail size from a scale-referenced frame, judging consistency with radar/satellite context, or routing a weather-photo submission in the VYU pipeline. Provides the phenomenon taxonomy (14 scored labels across cloud morphology, non-severe precipitation, severe convection, and storm structures), per-phenomenon feature vocabularies, the three-level confidence rubric, hail-size anchor-object guidance, and the out-of-scope escape hatch. Do NOT use for satellite-product interpretation or radar composite reading — those live in the radar-and-satellite-reference skill.
 license: MIT — see LICENSE.txt
 ---
 
 # severe-weather-reporting
 
-Reference knowledge for agents that classify, reconcile, verify, or summarize VYou's field-captured weather photos. The skill defines the 14 phenomenon labels VYou scores, names the diagnostic visual features that distinguish each, and codifies the confidence and hail-size rubrics every downstream artifact cites.
+Reference knowledge for agents that classify, reconcile, verify, or summarize VYU's field-captured weather photos. The skill defines the 14 phenomenon labels VYU scores, names the diagnostic visual features that distinguish each, and codifies the confidence and hail-size rubrics every downstream artifact cites.
 
 Cited by: **Classifier** (CMA, session-per-image), **Reconciliation** (CMA, per-location memory attached), **Deep Researcher** (CMA, per-user + per-location memory attached), **Verification** (Messages API cached prefix), and the offline **Classifier Validator** eval harness.
 
 ## Overview
 
-VYou's hero loop turns a sky photo into a verified, directional weather report on a shared map. Every agent that looks at the photo — or reasons about its consistency against radar and satellite context — grounds its vocabulary here. The central claim under test is feature-extraction *plausibility*: agents must describe what is actually visible in the frame, not hallucinate features a rubric says "should" accompany a phenomenon. This skill's job is to give every agent a shared, auditable vocabulary so a reviewer can check whether an extracted feature is present in the pixels.
+VYU's hero loop turns a sky photo into a verified, directional weather report on a shared map. Every agent that looks at the photo — or reasons about its consistency against radar and satellite context — grounds its vocabulary here. The central claim under test is feature-extraction *plausibility*: agents must describe what is actually visible in the frame, not hallucinate features a rubric says "should" accompany a phenomenon. This skill's job is to give every agent a shared, auditable vocabulary so a reviewer can check whether an extracted feature is present in the pixels.
 
 ## Quick orientation
 

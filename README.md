@@ -1,8 +1,8 @@
-# VYou
+# VYU
 
-*See the weather through someone else's view.*
+*What's in your view.*
 
-VYou is a community-fed situational weather map. A field observer takes a photo of what they see — a storm, a cloud structure, a clean front edge, a sky over a Bavarian monastery — and VYou captures not just the image but the compass heading, so every report becomes a **view-cone** on a shared map pointing exactly where the camera was aimed. Three Claude Managed Agents on Opus 4.7 do the work behind the cone — but on two clocks: two when you submit (the Classifier reads the photo, Reconciliation compares it against DWD radar + EUMETSAT MTG satellite + Open-Meteo), and the third when you ask (Deep Researcher answers a place-grounded question against the verified report and a per-cell memory of prior contributors). The product lives in one motion: a sky photo becomes a directional, AI-verified weather report on a shared map, and your contribution earns you a question only that map can answer.
+VYU is a community-fed situational weather map. A field observer takes a photo of what they see — a storm, a cloud structure, a clean front edge, a sky over a Bavarian monastery — and VYU captures not just the image but the compass heading, so every report becomes a **view-cone** on a shared map pointing exactly where the camera was aimed. Three Claude Managed Agents on Opus 4.7 do the work behind the cone — but on two clocks: two when you submit (the Classifier reads the photo, Reconciliation compares it against DWD radar + EUMETSAT MTG satellite + Open-Meteo), and the third when you ask (Deep Researcher answers a place-grounded question against the verified report and a per-cell memory of prior contributors). The product lives in one motion: a sky photo becomes a directional, AI-verified weather report on a shared map, and your contribution earns you a question only that map can answer.
 
 The name is pronounced *"view."* The **V** doubles as the heading-cone geometry; the **YOU** puts the observer at the centre. A submitted view is a **VYUport**.
 
@@ -46,7 +46,7 @@ The full architecture audit and the three-agent adversarial hardening pass live 
 
 ## How we chose this scope
 
-VYou was designed **backwards from the seven patterns that repeated across the five Built-with-Opus-4.6 winners** — domain-expertise-as-wedge, a named first user on camera, vision as first-class input, parallel orchestrated agents, a demo that shows a delta in time-to-artifact, domain knowledge as a reusable skill, and a lean codebase. We ship the full playbook at [`docs/04-winner-pattern-playbook.md`](docs/04-winner-pattern-playbook.md) and name each VYou move that reflects each pattern. Transparency about the scaffolding is itself the point — a submission that quietly mimics winning patterns is less interesting than one that names them, explains why it chose them, and lets judges hold it to the claim.
+VYU was designed **backwards from the seven patterns that repeated across the five Built-with-Opus-4.6 winners** — domain-expertise-as-wedge, a named first user on camera, vision as first-class input, parallel orchestrated agents, a demo that shows a delta in time-to-artifact, domain knowledge as a reusable skill, and a lean codebase. We ship the full playbook at [`docs/04-winner-pattern-playbook.md`](docs/04-winner-pattern-playbook.md) and name each VYU move that reflects each pattern. Transparency about the scaffolding is itself the point — a submission that quietly mimics winning patterns is less interesting than one that names them, explains why it chose them, and lets judges hold it to the claim.
 
 The domain wedge is genuine: the builder works professionally on systems adjacent to Europe's weather satellites. That perspective shapes the satellite layer of the product — band choices, data-access posture, the meteorology taxonomy cited by the agents. (Employer name stays out of the public materials for the hackathon week per the builder's personal-capacity framing; this can be revisited post-hackathon if the project continues.)
 

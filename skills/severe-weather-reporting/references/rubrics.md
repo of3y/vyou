@@ -1,10 +1,10 @@
 # Rubrics
 
-The qualitative judgments every VYou agent uses to land a record: confidence level, hail-size estimation, feature-richness (eval-side), and the out-of-scope escape hatch.
+The qualitative judgments every VYU agent uses to land a record: confidence level, hail-size estimation, feature-richness (eval-side), and the out-of-scope escape hatch.
 
 ## Confidence rubric — three levels, no numeric percentages
 
-VYou agents emit `confidence` as one of `low` / `medium` / `high`. Numeric percentages are never used — they convey false precision and are not calibrated.
+VYU agents emit `confidence` as one of `low` / `medium` / `high`. Numeric percentages are never used — they convey false precision and are not calibrated.
 
 - **`high`** — Phenomenon and features are clearly visible, no significant ambiguity. A reviewer looking at the same frame would agree on the phenomenon and on most of the extracted features without hesitation.
 - **`medium`** — Phenomenon is identifiable but some features are ambiguous, or the image is partially obscured (edge of frame, through-glass, partial lighting). The phenomenon judgment is defended; one or two features would survive reviewer scrutiny at most. **Default to `medium` unless evidence is strong in either direction.**

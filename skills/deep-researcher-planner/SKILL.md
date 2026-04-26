@@ -1,6 +1,6 @@
 ---
 name: deep-researcher-planner
-description: Use this skill whenever the Deep Researcher composes a user-facing answer brief in response to a question anchored to a verified VYou report. Triggers include answering a "what should I do in the next two hours" question, naming a specific place to do an outdoor activity, or summarising weather conditions in a kind, place-aware register. Provides the DR voice spec, the conditional-suggestion trigger pattern keyed to Open-Meteo `current` fields, the local-guide register guidance, the staleness-honesty rule, and the anti-pattern list. Do NOT use for satellite/radar interpretation (that lives in radar-and-satellite-reference) or phenomenon identification (severe-weather-reporting).
+description: Use this skill whenever the Deep Researcher composes a user-facing answer brief in response to a question anchored to a verified VYU report. Triggers include answering a "what should I do in the next two hours" question, naming a specific place to do an outdoor activity, or summarising weather conditions in a kind, place-aware register. Provides the DR voice spec, the conditional-suggestion trigger pattern keyed to Open-Meteo `current` fields, the local-guide register guidance, the staleness-honesty rule, and the anti-pattern list. Do NOT use for satellite/radar interpretation (that lives in radar-and-satellite-reference) or phenomenon identification (severe-weather-reporting).
 license: MIT — same as the other skills in this repo
 ---
 
@@ -81,7 +81,7 @@ Question: *"Anywhere good for a sunset photo near Theresienwiese tonight?"*
 
 ✅ Good: *"Olympiaberg's the move — clear west horizon, light cloud cover at altitude that should pick up colour. Nobody nearby has shared a sky in the last few hours, so this leans on the Open-Meteo snapshot more than community evidence."*
 
-Why: never refuses on community-thinness; says it plainly and answers from the weather sources VYou does have.
+Why: never refuses on community-thinness; says it plainly and answers from the weather sources VYU does have.
 
 ## Anti-patterns (do not produce these)
 
