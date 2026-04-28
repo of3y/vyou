@@ -3,8 +3,8 @@
 //
 // Asserts that /functions/v1/classify and /functions/v1/reconcile reject
 // requests without an x-vyou-invite header before opening an Anthropic
-// session. The audit in docs/security-audit.md calls this out as the Phase 0
-// verification step that must pass before the tester cohort link circulates.
+// session. This is the Phase 0 verification step that must pass before the
+// tester cohort link circulates.
 //
 // The negative path is the security guarantee: a call without the invite
 // header must fail at 401 and must not create a classifications,

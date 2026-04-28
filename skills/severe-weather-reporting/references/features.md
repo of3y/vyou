@@ -2,7 +2,7 @@
 
 The `features` array in a Classifier record is a 3–7-entry list of brief, verifiable visual phrases. Every entry must be something a human reviewer can point at in the pixels — if a rubric says a phenomenon "usually" has feature X but X is not in THIS frame, do not record it.
 
-This file is the vocabulary the validation corpus is labeled against (`eval/dataset-manifest.csv` `features_gold` column, per `docs/02 MVPs/validation-corpus-curation.md`). Feature flags are kebab-case, semicolon-separated in the corpus; free-form short phrases in agent output. Prefer exact flags from the lists below where applicable — the eval harness scores per-feature precision and recall over these flags.
+This file is the vocabulary the validation corpus is labeled against (`eval/dataset-manifest.csv` `features_gold` column). Feature flags are kebab-case, semicolon-separated in the corpus; free-form short phrases in agent output. Prefer exact flags from the lists below where applicable — the eval harness scores per-feature precision and recall over these flags.
 
 ## How to populate the `features` array
 

@@ -3,10 +3,10 @@
 // Path:  /functions/v1/mtg-tile/{layer}/{z}/{x}/{y}.png?t=<iso-bucket>
 // Layer: "ir" | "lightning"
 //
-// Why this exists: per the 2026-04-24 decision-log entry, every weather-layer
-// provider gets server-side fetch by default. EUMETView's public WMS enforces
-// ~20 req/window per client; without a shared cache, N viewers = N × upstream
-// load and visible 502 / "cannot decode bitmap" errors when the limiter trips.
+// Why this exists: every weather-layer provider gets server-side fetch by
+// default. EUMETView's public WMS enforces ~20 req/window per client; without
+// a shared cache, N viewers = N × upstream load and visible 502 / "cannot
+// decode bitmap" errors when the limiter trips.
 //
 // On miss we fetch upstream, store in the public mtg-tiles bucket, and serve
 // the bytes. On hit we return the cached bytes directly. URLs are content-

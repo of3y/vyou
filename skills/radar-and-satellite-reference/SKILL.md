@@ -25,15 +25,9 @@ The Edge Functions thread three external feeds into the Reconciliation prompt an
 
 When a feed is absent, the prompt body carries a `feed unavailable` line with the error. Treat the absent feed as a soft signal — degrade to "inconclusive" if the missing feed is the only evidence that would have supported the verdict.
 
-## Status — stub
+## Per-instrument commitment
 
-This skill's body is intentionally thin right now. The full reference content lands when the Reconciliation agent is built (Day 4), because the diagnostic framing is tuned to what Reconciliation actually needs to cite. Today the skill carries:
-
-- Pointer to the authoritative MTG wedge brief at [docs/mtg-satellite-wedge-brief.md](../../docs/mtg-satellite-wedge-brief.md) for FCI channel guide and LI framing.
-- Pointer to the EUMETView WMS endpoint reference at [docs/01 Active Research/eumetview-wms-endpoint-reference.md](../../docs/01%20Active%20Research/eumetview-wms-endpoint-reference.md) for the working-integration layer names and time-dimension semantics.
-- Pointer to [docs/architecture.md](../../docs/architecture.md) §Data layers for the current per-instrument commitment (MTG FCI HRFI IR10.5 µm + MTG LI Accumulated Flash Area + DWD RADOLAN).
-
-When Reconciliation lands, `references/radolan.md` and `references/mtg.md` fill in with per-product interpretation rubrics.
+Current data layers: MTG FCI HRFI IR10.5 µm + MTG LI Accumulated Flash Area + DWD RADOLAN.
 
 ## Out of scope for this skill
 

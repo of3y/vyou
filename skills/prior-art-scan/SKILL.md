@@ -14,17 +14,7 @@ Cited by: **Deep Researcher** (CMA, per-user + per-location memory attached).
 
 VYU's defensible framing is not "another weather app" — it is community photos as evidence, reconciled against official layers, on a shared map. That framing lands harder when the brief names what the incumbents do and don't do. This skill carries the short reference entries Deep Researcher quotes.
 
-## Status — stub
-
-This skill's body is intentionally thin right now. Population happens through Days 2–4 as research digests under `docs/01 Active Research/` surface concrete comparison points and Daniel curates them in. Today the skill points at:
-
-- [docs/01 Active Research/weather-market-and-positioning-digest.md](../../docs/01%20Active%20Research/weather-market-and-positioning-digest.md) — the authoritative positioning brief covering incumbent platforms and VYU's defensible framing.
-- [docs/01 Active Research/nature-observation-competitors-digest.md](../../docs/01%20Active%20Research/nature-observation-competitors-digest.md) — mechanics to borrow from iNaturalist, Seek, Observation, Merlin.
-
-When the Deep Researcher agent is running end-to-end (Friday evening cut-back gate), the skill's body expands with per-platform reference entries the brief cites by name.
-
 ## Out of scope for this skill
 
 - Photographic phenomenon identification — see the `severe-weather-reporting` skill.
 - Radar / satellite product interpretation — see the `radar-and-satellite-reference` skill.
-- Internal VYU build-process tooling (housekeeping, decision-requests) — those live under `.claude/skills/`, not here.

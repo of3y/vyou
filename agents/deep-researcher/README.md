@@ -13,13 +13,13 @@ summary: The post-Reconciliation content-layer orchestrator. Fires when `reports
 
 # Deep Researcher
 
-Deep Researcher is VYou's third Managed Agent and the one that makes the *Best Use of Claude Managed Agents* narrative concrete. It runs AFTER the hero loop's Classifier → Reconciliation pipeline has landed a verified report, opens its own CMA session with the submission's context and two Memory Box stores attached, and returns a cited evidence-summary block that grounds the report in prior observations from the same cell and in the user's declared goal-context.
+Deep Researcher is VYU's third Managed Agent. It runs AFTER the hero loop's Classifier → Reconciliation pipeline has landed a verified report, opens its own CMA session with the submission's context and two Memory Box stores attached, and returns a cited evidence-summary block that grounds the report in prior observations from the same cell and in the user's declared goal-context.
 
 ## Surface — Managed Agent, content-layer orchestrator
 
 Deep Researcher is the "top layer" of VYou's agent stack by virtue of what it *reasons over* — the Classifier's phenomenon record, the Radar agent's reading, the Reconciliation narrative, nearby accepted reports from the per-location Memory Box, prior briefs for the same cell, and the user's history from the per-user Memory Box. It is NOT a control-flow orchestrator: Deep Researcher does not spin up Classifier/Reconciliation sub-sessions or call them through custom tools. The existing ingestion pipeline persists its artifacts to Postgres as it runs; Deep Researcher reads those persisted artifacts plus Memory Box state and synthesizes.
 
-This framing is deliberate, captured in the [decision log](../../docs/decision-log.md) 2026-04-24 entry. Session-of-sessions was considered and rejected as over-engineering: it would force every submission to cold-start a DR session before Classifier fires, make DR sessions block on child sessions (fragile), and retract the already-working `/classify` Edge Function path. Content-layer orchestration keeps the synchronous hero loop intact, keeps DR latency off the critical path, and still carries the full CMA-primitive story (persistent agent, attached skills, attached memory stores, streaming events).
+This framing is deliberate. Session-of-sessions was considered and rejected as over-engineering: it would force every submission to cold-start a DR session before Classifier fires, make DR sessions block on child sessions (fragile), and retract the already-working `/classify` Edge Function path. Content-layer orchestration keeps the synchronous hero loop intact, keeps DR latency off the critical path, and still carries the full CMA-primitive story (persistent agent, attached skills, attached memory stores, streaming events).
 
 ## Memory Box shape
 
@@ -29,7 +29,7 @@ Two store classes, both workspace-scoped, attached to the DR session at creation
 
 - **Per-location store** (`memstore_loc_<geohash6>`) — a rolling radar baseline for the cell, the most recent N accepted reports from any user, and the latest DR briefing for the cell. Geohash6 gives ~1.2 km cells — coarse enough to share usefully across users in the same neighborhood, fine enough that the briefing stays locally relevant. DR reads this store to answer *"is this report consistent with what other observers nearby saw in the last hour?"* and writes back the brief it produces. The next user querying the same cell inherits the work.
 
-The Memory Box demo beat is built on this layout: a second beta user submits a photo from the same geohash cell as the first, and Deep Researcher's brief is *visibly* richer because the per-location store now carries the prior session's writes. That difference, shown in the three-minute video, is the *Best Use of Claude Managed Agents* prize narrative made concrete.
+The Memory Box demo beat is built on this layout: a second beta user submits a photo from the same geohash cell as the first, and Deep Researcher's brief is *visibly* richer because the per-location store now carries the prior session's writes.
 
 ## Attached skills
 
@@ -46,16 +46,6 @@ Fires on `reports.status = 'accepted'` via a dedicated `/research` Supabase Edge
 
 The UI renders DR's brief as an evidence-summary block under the classification block in [ReportDetail](../../src/routes/ReportDetail.tsx). Loading state is a simple "Preparing evidence brief…" chip with a 60s timeout; if the brief fails to land, the report stays at `accepted` and the block does not appear — honesty over overclaim.
 
-## Friday-evening cut-back gate
-
-Per [docs/03 Decisions/deep-researcher-reopened-2026-04-23.md](../../docs/03%20Decisions/deep-researcher-reopened-2026-04-23.md), Deep Researcher stays in the submission only if, by Friday 2026-04-25 evening:
-
-1. It returns a cited brief on a real beta photo in under 30 seconds.
-2. The brief visibly references prior reports from the same location via Memory Box.
-3. The demo can show two queries at the same location with the second visibly richer.
-
-If any of those three fail, Deep Researcher gets cut on Saturday morning and the morning's depth-before-breadth principle reasserts. The reopening buys the experiment, not its result.
-
 ## Setup
 
 Provisioning script lands alongside this README:
@@ -65,4 +55,4 @@ Provisioning script lands alongside this README:
 
 ## Status
 
-Scaffold + README only as of 2026-04-24 alignment commit. The agent build, the `/research` Edge Function, and the `ReportDetail` evidence-summary block are Day 3 evening / Day 4 work. Cut-back gate evaluates Friday evening.
+Live with the `/research` Edge Function and the `ReportDetail` evidence-summary block. Returns a cited brief on a real submission, references prior reports from the same location via Memory Box, and the second query at a cell visibly inherits the first session's writes.

@@ -19,7 +19,7 @@ The TOS Moderator watches the text and the pattern rather than the pixels. Input
 
 TOS Moderator runs as a direct Anthropic Messages API call from a Supabase Edge Function, not as a Claude Managed Agent. Reads the per-user store via a tool call when a rate / pattern signal matters, rather than attaching the store as a session resource.
 
-**Why not a CMA.** Same shape as the Image Moderator — binary-ish classifier on the synchronous submission path, latency-sensitive, no session-state continuity worth the cold-start cost. Reading the per-user store via a tool call (rather than attaching it as a session resource) is cheaper here because the moderator only needs a small slice (recent-submission-rate, prior-flag-count) rather than the full store. Per [docs/02 MVPs/managed-agents-architecture.md](../../docs/02%20MVPs/managed-agents-architecture.md) §Where CMAs are the wrong choice.
+**Why not a CMA.** Same shape as the Image Moderator — binary-ish classifier on the synchronous submission path, latency-sensitive, no session-state continuity worth the cold-start cost. Reading the per-user store via a tool call (rather than attaching it as a session resource) is cheaper here because the moderator only needs a small slice (recent-submission-rate, prior-flag-count) rather than the full store.
 
 ## Status — stub
 

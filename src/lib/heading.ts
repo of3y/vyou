@@ -6,8 +6,7 @@
 // bearing when the phone is held roughly upright in portrait. Pitch and roll
 // break that shortcut and introduce systematic heading errors.
 //
-// We compute the back-camera bearing from the full 3D pose instead. See
-// docs/heading-math.md for the derivation and sanity checks.
+// We compute the back-camera bearing from the full 3D pose instead.
 
 const DEG = Math.PI / 180;
 const RAD = 180 / Math.PI;

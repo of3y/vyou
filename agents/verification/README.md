@@ -19,7 +19,7 @@ The Verification agent is VYou's honesty layer. Input: the full ingestion-pipeli
 
 Verification runs as a direct Anthropic Messages API call from a Supabase Edge Function, not as a Claude Managed Agent. The `severe-weather-reporting` skill's content loads into the system prompt with `cache_control: { type: "ephemeral" }` so every call reuses the cached prefix.
 
-**Why not a CMA.** The Verification check is largely deterministic and geometric: given the Classifier's feature list, the Radar reading, and the Reconciliation consistency judgment, does the composite record hold together? Session state + memory attachment do not add value to that check, and the cold-start latency would push Verification's verdict behind the synchronous hero-loop budget. Per [docs/02 MVPs/managed-agents-architecture.md](../../docs/02%20MVPs/managed-agents-architecture.md) §Where CMAs are the wrong choice, deterministic checks gain nothing from an agent loop.
+**Why not a CMA.** The Verification check is largely deterministic and geometric: given the Classifier's feature list, the Radar reading, and the Reconciliation consistency judgment, does the composite record hold together? Session state + memory attachment do not add value to that check, and the cold-start latency would push Verification's verdict behind the synchronous hero-loop budget. Deterministic checks gain nothing from an agent loop.
 
 ## Status — stub
 

@@ -17,7 +17,7 @@ The Classifier is the first vision-using agent in VYou's ingestion pipeline. Inp
 
 ## Surface — Managed Agent, session-per-image
 
-Classifier runs as a Claude Managed Agent on `claude-opus-4-7`. Each submitted photo opens a fresh session against the persisted agent config; the Edge Function at [supabase/functions/classify](../../supabase/functions/classify) streams events until the session goes idle, parses the JSON record, and writes a `classifications` row. Per-image isolation and server-side vision execution are why this one is a CMA rather than a plain Messages API call — see [docs/02 MVPs/managed-agents-architecture.md](../../docs/02%20MVPs/managed-agents-architecture.md) §Role-by-role decision matrix.
+Classifier runs as a Claude Managed Agent on `claude-opus-4-7`. Each submitted photo opens a fresh session against the persisted agent config; the Edge Function at [supabase/functions/classify](../../supabase/functions/classify) streams events until the session goes idle, parses the JSON record, and writes a `classifications` row. Per-image isolation and server-side vision execution are why this one is a CMA rather than a plain Messages API call.
 
 ## Setup
 
@@ -43,6 +43,6 @@ Populated according to the rubrics in the attached skill. `hail_size_cm` is non-
 
 ## Status
 
-Live on `agent_011CaNU2zpPjfdSrRfAooewJ` (v1, 2026-04-24 midday re-provisioning) with `skill_012Ab9cKxYUuXKLPr1SsiHR9@1777027793564790` (severe-weather-reporting) attached at `agents.create()`. Environment `env_01TQ91NRPF3STsJsqjid7jBR`. Prior agent `agent_011CaNFPcVYNTDMcAbNJX2oa` (no skill attached) stays live until archived. See [decision-log.md](../../docs/decision-log.md) 2026-04-24. First end-to-end smoke against an indoor-plant submission returned `out_of_scope` / `high` confidence with feature `indoor scene with houseplant and laptop` — the out-of-scope path works.
+Live on `agent_011CaNU2zpPjfdSrRfAooewJ` (v1, 2026-04-24 midday re-provisioning) with `skill_012Ab9cKxYUuXKLPr1SsiHR9@1777027793564790` (severe-weather-reporting) attached at `agents.create()`. Environment `env_01TQ91NRPF3STsJsqjid7jBR`. Prior agent `agent_011CaNFPcVYNTDMcAbNJX2oa` (no skill attached) stays live until archived. First end-to-end smoke against an indoor-plant submission returned `out_of_scope` / `high` confidence with feature `indoor scene with houseplant and laptop` — the out-of-scope path works.
 
 Open item: hail-size calibration against a corpus of scale-referenced frames. Drops into the validation sanity run under `eval/` once the corpus has enough hail samples labeled.

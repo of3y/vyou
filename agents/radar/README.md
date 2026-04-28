@@ -19,7 +19,7 @@ The Radar agent does not look at the photo. Input: GPS, timestamp, compass headi
 
 Radar runs as a direct Anthropic Messages API call from a Supabase Edge Function, not as a Claude Managed Agent. The `radar-and-satellite-reference` skill's reference content is loaded into the system prompt with `cache_control: { type: "ephemeral" }` so every call reuses the cached prefix.
 
-**Why not a CMA.** Per [docs/02 MVPs/managed-agents-architecture.md](../../docs/02%20MVPs/managed-agents-architecture.md) §Where CMAs are the wrong choice: "Latency-sensitive paths the user is waiting on synchronously — the moderator gates in particular — pay a session cold-start cost that direct Messages API does not. Deterministic checks (EXIF parsing, heading geometry, radar fetches) gain nothing from an agent loop and lose latency to it." Radar fits both criteria — the call is deterministic (given the same inputs, the same RADOLAN tile is fetched and the same reading returned), latency-sensitive (on the synchronous hero loop), and stateless (no benefit from session persistence).
+**Why not a CMA.** Latency-sensitive paths the user is waiting on synchronously pay a session cold-start cost that direct Messages API does not. Deterministic checks (EXIF parsing, heading geometry, radar fetches) gain nothing from an agent loop and lose latency to it. Radar fits all three criteria — the call is deterministic (given the same inputs, the same RADOLAN tile is fetched and the same reading returned), latency-sensitive (on the synchronous hero loop), and stateless (no benefit from session persistence).
 
 ## Status — stub
 

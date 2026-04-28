@@ -20,12 +20,12 @@ execution-checklist.html
 # Tester-cohort invite roster (raw tokens + per-tester share links)
 tester-invites.md
 
-# Obsidian personal pane/cursor state — constantly churns, not shared
-docs/.obsidian/workspace.json
-docs/.obsidian/workspace-mobile.json
+# Project vault — moved to private companion repo of3y/vyou-vault
+docs/
+CLAUDE.md
 
-# Claude Code scheduled-task lock (local runtime state)
-.claude/scheduled_tasks.lock
+# Claude Code session-local config and skills (private)
+.claude/
 .vercel
 
 # Demo media + Remotion build outputs (large, regenerable)

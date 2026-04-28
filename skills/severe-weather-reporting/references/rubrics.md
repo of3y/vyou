@@ -46,7 +46,7 @@ Common failure modes to avoid:
 - **`medium`** — Phenomenon is identifiable; some features are unambiguous and some are inferable but not definitive. Target: ~30% of the corpus.
 - **`low`** — Phenomenon is labeled for the gold record but features are sparse, partially obscured, or visually ambiguous. Low-richness rows are negative controls for the over-extraction / hallucination slice. Target: ~10% of the corpus.
 
-Agents do not know the richness rating at inference time. The rubric is visible here so an agent operating in eval context understands why the high-vs-low gap is the load-bearing quality signal (see `docs/validation-plan.md` thresholds — `≥ 0.15` precision gap required).
+Agents do not know the richness rating at inference time. The rubric is visible here so an agent operating in eval context understands why the high-vs-low gap is the load-bearing quality signal — the eval harness expects a `≥ 0.15` precision gap between high-richness and low-richness rows.
 
 ## Safety flag — `safe: boolean`
 

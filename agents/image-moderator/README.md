@@ -19,7 +19,7 @@ The Image Moderator is the gate. Input: the submitted photo. Output: accept / ha
 
 Image Moderator runs as a direct Anthropic Messages API call from a Supabase Edge Function, not as a Claude Managed Agent. The policy prompt is short and stable enough that caching pays for itself across calls without needing a separate skill bundle.
 
-**Why not a CMA.** The moderator is a binary-ish classifier on the synchronous ingestion path — the user is waiting for "accept" before anything else happens. Per [docs/02 MVPs/managed-agents-architecture.md](../../docs/02%20MVPs/managed-agents-architecture.md) §Where CMAs are the wrong choice, moderator gates are the canonical example of where CMA cold-start latency is the wrong tradeoff. No session state needed; no memory attachment adds value; the call is small and fast.
+**Why not a CMA.** The moderator is a binary-ish classifier on the synchronous ingestion path — the user is waiting for "accept" before anything else happens. Moderator gates are the canonical example of where CMA cold-start latency is the wrong tradeoff: no session state needed, no memory attachment adds value, the call is small and fast.
 
 ## Status — stub
 
