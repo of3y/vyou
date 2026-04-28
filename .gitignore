@@ -28,12 +28,6 @@ CLAUDE.md
 .claude/
 .vercel
 
-# Demo media + Remotion build outputs (large, regenerable)
-demo/assets/
-demo/out/
-demo/renders/
-
-# Remotion player build artifacts
-remotion-player/node_modules/
-remotion-player/dist/
-remotion-player/*.tsbuildinfo
+# Hackathon submission artifacts (kept locally, removed from public tree)
+demo/
+remotion-player/
