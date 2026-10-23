@@ -1,5 +1,7 @@
 # VYU
 
+> **Retired 2026-10-23.** The site at vyou.dkck.dev is offline and its backend (Supabase project, Claude Managed Agents, Vercel project) has been deleted. This repository stays, read-only, as the record of the submission to the [Built with Opus 4.7 Claude Code hackathon](https://cerebralvalley.ai/e/built-with-4-7-hackathon) (Anthropic × Cerebral Valley, 21–26 April 2026). The code describes a system that ran during that week; nothing in it is live today.
+
 *What's in your view.*
 
 VYU is a community-fed situational weather map. A field observer takes a photo of what they see — a storm, a cloud structure, a clean front edge, a sky over a Bavarian monastery — and VYU captures not just the image but the compass heading, so every report becomes a **view-cone** on a shared map pointing exactly where the camera was aimed. Three Claude Managed Agents on Opus 4.7 do the work behind the cone — but on two clocks: two when you submit (the Classifier reads the photo, Reconciliation compares it against DWD radar + EUMETSAT MTG satellite + Open-Meteo), and the third when you ask (Deep Researcher answers a place-grounded question against the verified report and a per-cell memory of prior contributors). The product lives in one motion: a sky photo becomes a directional, AI-verified weather report on a shared map, and your contribution earns you a question only that map can answer.
@@ -49,5 +51,7 @@ The validation harness in [`eval/`](eval/) ships supervised classifier benchmark
 - **Default data sources** (DWD, EUMETSAT public imagery, ESWD) ship with the repo; paid feeds are BYO-key.
 
 ## Status
+
+Retired. The hero loop ran in production during the hackathon week and for a closed tester cohort afterwards; the hosted services were torn down on 2026-07-31 (database and storage, after a verified export) and 2026-10-23 (site and DNS). What follows is the status as it stood at submission.
 
 Hero loop landed in production with a 10-tester closed cohort during the hackathon week: photo → heading → view-cone → auto-fire reconcile against radar + satellite + forecast → earned-question Deep Researcher brief grounded in per-cell memory. Six receipts from the cohort sit in the database — paragliders above the Alps, a sailor on the Rursee, trail runners near the Zugspitze, a friend on holiday in Turkey, the textbook Bräustüberl beer answer at Kloster Andechs above the Ammersee.
